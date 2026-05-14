@@ -273,7 +273,7 @@ This module converts motion targets into stable control outputs.
 ```text
 control/
 ├── pid.py
-├── steering_controller.py
+├── steering_control.py
 ├── speed_controller.py
 └── filters.py
 ```
