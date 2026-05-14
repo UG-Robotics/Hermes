@@ -1,1 +1,0 @@
-<!-- sim camera cod -->
