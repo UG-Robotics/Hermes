@@ -11,6 +11,10 @@ from config.robot_config import SERIAL_PORT, BAUD_RATE, SERIAL_TIMEOUT
 from hardware.buttons import KeyboardOverrideListener
 from communication.protocol import serialize_packet, get_emergency_packet
 
+from control.drive_command import drive_command
+from state_machine.manager import StateMachine
+
+
 logger = get_logger("MainController")
 
 def run_realtime_loop():
@@ -45,6 +49,8 @@ def run_realtime_loop():
     logger.info("Manual controls active: 'w' (FORWARD), 's' (BACKWARD), 'm' (TOGGLE MANUAL)")
 
     try:
+        state_machine = StateMachine()
+        
         while True:
             start_time = time.time()
             manual_active = (
@@ -56,10 +62,12 @@ def run_realtime_loop():
             if manual_active:
                 speed, steer, action = listener.get_manual_target()
                 mode_flag = 1
+            
             else:
-                # Autonomous mode (placeholder: vehicle remains stopped)
-                # Will replace this block with autonomous navigation / sensor loop when ready
-                speed, steer, action = 0, 0, "STOP"
+                speed, steer, action = drive_command(
+                    state_machine.current_state,
+                    state_machine.context  # see Step 3 below
+                )
                 mode_flag = 0
             
             packet = serialize_packet(speed, steer, action, mode_flag)

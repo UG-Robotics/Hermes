@@ -3,6 +3,7 @@ try:
     from state_machine.transitions import TransitionManager
     from utils.logger import get_logger
     from state_machine.priorities import Priority
+    from state_machine.robot_context import RobotContext 
 except ModuleNotFoundError:
     # Allow running this file directly by adding src to sys.path
     import sys
@@ -12,6 +13,7 @@ except ModuleNotFoundError:
     from state_machine.transitions import TransitionManager
     from utils.logger import get_logger
     from state_machine.priorities import Priority
+    from state_machine.robot_context import RobotContext
 
 logger = get_logger(__name__)
 
@@ -20,6 +22,12 @@ class StateMachine:
 
     def __init__(self):
 
+        class StateMachine:
+            def __init__(self):
+                self.context = RobotContext()  # add this line
+                self.current_state = State.INIT
+                ...
+                
         self.current_state = State.INIT
 
         self.transition_manager = TransitionManager()
