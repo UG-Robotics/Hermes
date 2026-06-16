@@ -1,11 +1,4 @@
-state_machine/
-    __pycache__
-        /*
-
-testing/
-    __pycache__
-        /*
-
-utils/
-    __pycache__
-        /*
+# Python bytecode & cache files
+__pycache__/
+*.py[cod]
+*$py.class
