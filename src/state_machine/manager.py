@@ -1,7 +1,7 @@
 try:
     from state_machine.states import State
     from state_machine.transitions import TransitionManager
-    from utils.logger import logger
+    from utils.logger import get_logger
     from state_machine.priorities import Priority
 except ModuleNotFoundError:
     # Allow running this file directly by adding src to sys.path
@@ -10,8 +10,10 @@ except ModuleNotFoundError:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     from state_machine.states import State
     from state_machine.transitions import TransitionManager
-    from utils.logger import logger
+    from utils.logger import get_logger
     from state_machine.priorities import Priority
+
+logger = get_logger(__name__)
 
 
 class StateMachine:

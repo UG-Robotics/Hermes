@@ -1,8 +1,23 @@
 import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(levelname)s] %(message)s"
-)
 
-logger = logging.getLogger("logger")
+def get_logger(name: str) -> logging.Logger:
+    """
+    Returns a configured logger instance.
+    """
+
+    logger = logging.getLogger(name)
+
+    if not logger.handlers:
+
+        handler = logging.StreamHandler()
+
+        formatter = logging.Formatter(
+            "[%(levelname)s] %(name)s: %(message)s"
+        )
+        
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+
+    return logger
