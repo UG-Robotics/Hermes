@@ -2,7 +2,6 @@ import unittest
 import sys
 import pathlib
 
-# Ensure src is on sys.path
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from communication.protocol import serialize_packet, get_emergency_packet

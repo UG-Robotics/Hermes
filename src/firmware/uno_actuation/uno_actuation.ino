@@ -1,9 +1,3 @@
-/**
- * Arduino Uno Actuation Firmware for WRO 2026 Future Engineers.
- * Conforms to Rules 9.10, 9.11 (Start Button) and 11.3, 11.5 (Actuators).
- * Packet format: SPEED,STEER,ACTION,MODE\n
- */
-
 #include <Servo.h>
 
 const int PIN_START_BUTTON = 2;
