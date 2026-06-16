@@ -384,6 +384,217 @@ utils/
 ```
 
 ---
+#`utils/logger.py`
+# Logging System
+
+## Purpose
+
+The logging system provides a consistent way for every subsystem of the robot to report information, warnings, errors, and debugging information during development, simulation, and competition runs.
+
+Examples of information that should be logged include:
+
+* State transitions
+* Sensor readings
+* Obstacle detections
+* Lap completions
+* Parking events
+* Communication failures
+* Runtime errors
+* Emergency stops
+
+Using a centralized logger makes debugging significantly easier because all messages follow the same format and can be traced back to their originating module.
+
+---
+
+## Logger Location
+
+```text
+src/
+└── utils/
+    └── logger.py
+```
+
+---
+
+## Implementation
+
+The logger utility exposes a single function:
+
+```python
+from utils.logger import get_logger
+```
+
+Example implementation:
+
+```python
+logger = get_logger(__name__)
+```
+
+The `__name__` parameter automatically identifies the module generating log messages.
+
+For example:
+
+```python
+logger = get_logger(__name__)
+```
+
+inside:
+
+```text
+state_machine/robot_context.py
+```
+
+will produce messages such as:
+
+```text
+[INFO] state_machine.robot_context: Lap completed. Current lap count = 1
+```
+
+---
+
+## Log Levels
+
+### INFO
+
+Used for normal system operation.
+
+Examples:
+
+```python
+logger.info("Lap completed.")
+logger.info("State transition: INIT -> FOLLOW_TRACK")
+```
+
+Output:
+
+```text
+[INFO] state_machine.robot_context: Lap completed.
+```
+
+---
+
+### WARNING
+
+Used for unusual but recoverable situations.
+
+Examples:
+
+```python
+logger.warning("TOF reading appears noisy.")
+logger.warning("RobotContext reset.")
+```
+
+Output:
+
+```text
+[WARNING] state_machine.robot_context: RobotContext reset.
+```
+
+---
+
+### ERROR
+
+Used when a subsystem encounters a problem.
+
+Examples:
+
+```python
+logger.error("Camera initialization failed.")
+logger.error("Robot Error: Camera Failure")
+```
+
+Output:
+
+```text
+[ERROR] state_machine.robot_context: Robot Error: Camera Failure
+```
+
+---
+
+## Usage Rules
+
+Every new module should create its own logger instance.
+
+Example:
+
+```python
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+```
+
+Recommended locations:
+
+```text
+communication/
+control/
+hardware/
+perception/
+planning/
+simulation/
+state_machine/
+```
+
+Do NOT create custom logging implementations in individual modules.
+
+All logging should go through `utils.logger`.
+
+---
+
+## Good Logging Examples
+
+State machine:
+
+```python
+logger.info(
+    f"State transition: {old_state} -> {new_state}"
+)
+```
+
+Obstacle detection:
+
+```python
+logger.info(
+    f"Red pillar detected at x={pillar_x}"
+)
+```
+
+Communication:
+
+```python
+logger.warning(
+    "Serial packet dropped."
+)
+```
+
+Error handling:
+
+```python
+logger.error(
+    "Camera disconnected."
+)
+```
+
+---
+
+## Bad Logging Examples
+
+Avoid:
+
+```python
+print("something happened")
+```
+
+Use:
+
+```python
+logger.info("Something happened.")
+```
+
+This ensures consistent formatting across the entire project.
+
+
+---
 
 # `config/`
 

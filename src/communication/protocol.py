@@ -1,7 +1,7 @@
-import logging
+from utils.logger import get_logger
 from config.robot_config import SPEED_MIN, SPEED_MAX, STEER_MIN, STEER_MAX
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 VALID_ACTIONS = {"FORWARD", "BACKWARD", "STOP"}
 

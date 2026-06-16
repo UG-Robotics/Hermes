@@ -1,5 +1,5 @@
 import threading
-import logging
+from utils.logger import get_logger
 from pynput import keyboard
 from config.robot_config import (
     KEY_TOGGLE_MANUAL,
@@ -10,7 +10,7 @@ from config.robot_config import (
     SPEED_STOP
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class KeyboardOverrideListener:
     """Background listener using pynput to capture manual override keys."""
