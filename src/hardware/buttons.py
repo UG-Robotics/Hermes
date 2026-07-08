@@ -1,6 +1,5 @@
 import threading
 from utils.logger import get_logger
-from pynput import keyboard
 from config.robot_config import (
     KEY_TOGGLE_MANUAL,
     KEY_FORWARD,
@@ -12,8 +11,21 @@ from config.robot_config import (
 
 logger = get_logger(__name__)
 
+try:
+    from pynput import keyboard
+    PYNPUT_AVAILABLE = True
+except Exception as e:
+    keyboard = None
+    PYNPUT_AVAILABLE = False
+    logger.warning(f"pynput unavailable at import time: {e}. Manual override disabled.")
+
+
 class KeyboardOverrideListener:
-    """Background listener using pynput to capture manual override keys."""
+    """Background listener using pynput to capture manual override keys.
+
+    Degrades to a no-op (manual mode permanently off) if pynput can't be
+    imported or its hook fails to start, instead of crashing the program.
+    """
     def __init__(self):
         self._lock = threading.Lock()
         self._manual_mode_active = False
@@ -21,10 +33,17 @@ class KeyboardOverrideListener:
         self._listener = None
 
     def start(self):
-        self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
-        self._listener.daemon = True
-        self._listener.start()
-        logger.info("Keyboard override listener active.")
+        if not PYNPUT_AVAILABLE:
+            logger.warning("Keyboard override listener skipped (pynput unavailable).")
+            return
+        try:
+            self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
+            self._listener.daemon = True
+            self._listener.start()
+            logger.info("Keyboard override listener active.")
+        except Exception as e:
+            logger.warning(f"Keyboard override listener failed to start: {e}")
+            self._listener = None
 
     def stop(self):
         if self._listener:
