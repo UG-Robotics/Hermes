@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermes · Ground Station</title>
+<style>
+  :root{
+    --bg:#0c0e13; --bg2:#0f121a; --panel:#151925; --panel2:#1c2130; --line:#252b3a;
+    --txt:#e9ecf4; --muted:#8b93a8; --faint:#5a6276;
+    --accent:#5cc8ff; --accent-dim:#2b6f96;
+    --ok:#34d399; --warn:#fbbf24; --err:#f87171;
+    --red:#f87171; --green:#34d399;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --r:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:
+        radial-gradient(1200px 600px at 80% -10%, #141b2b 0%, transparent 60%),
+        var(--bg);
+       color:var(--txt); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       font-size:13px; -webkit-font-smoothing:antialiased;}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  /* ---- top bar ---- */
+  header{display:flex;align-items:center;gap:16px;padding:12px 20px;
+         border-bottom:1px solid var(--line); background:rgba(12,14,19,.7);
+         backdrop-filter:blur(8px); position:sticky; top:0; z-index:10}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+        background:linear-gradient(145deg,#1d2740,#0e1420);border:1px solid #2b3450;
+        box-shadow:0 0 0 1px #232c40, inset 0 0 12px rgba(92,200,255,.15)}
+  .logo svg{width:18px;height:18px}
+  .brand b{font-size:15px;letter-spacing:.6px;font-weight:650}
+  .brand span{color:var(--muted);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-left:2px}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650;
+        padding:5px 11px;border-radius:20px;letter-spacing:.4px;border:1px solid transparent}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .pill.mode-auto{color:var(--accent);border-color:var(--accent-dim);background:rgba(92,200,255,.08)}
+  .pill.mode-manual{color:var(--warn);border-color:#7a5a12;background:rgba(251,191,36,.09)}
+  .pill.hw-sim{color:var(--warn);border-color:#7a5a12;background:rgba(251,191,36,.09)}
+  .pill.hw-real{color:var(--ok);border-color:#1c6b4e;background:rgba(52,211,153,.09)}
+  .link{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:7px}
+  .link .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);transition:.3s}
+  .link.up .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .loop{color:var(--faint);font-size:11px}
+
+  /* ---- layout ---- */
+  .wrap{display:grid;grid-template-columns:300px minmax(0,1fr) 360px;gap:14px;padding:14px;
+        align-items:start;max-width:1600px;margin:0 auto}
+  @media(max-width:1150px){.wrap{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .card{background:linear-gradient(180deg,var(--panel),var(--bg2));
+        border:1px solid var(--line);border-radius:var(--r);padding:14px;min-width:0}
+  .card>h2{margin:0 0 11px;font-size:10.5px;text-transform:uppercase;letter-spacing:1.4px;
+           color:var(--muted);font-weight:650;display:flex;align-items:center;gap:8px}
+  .card>h2::before{content:"";width:3px;height:11px;border-radius:2px;background:var(--accent-dim)}
+
+  /* ---- camera ---- */
+  #cam{width:100%;display:block;border-radius:8px;background:#05070b;aspect-ratio:4/3;object-fit:cover;
+       border:1px solid var(--line)}
+  .meta{color:var(--faint);font-size:10.5px;margin-top:7px;display:flex;justify-content:space-between}
+
+  /* ---- HUD ---- */
+  .hud-wrap{position:relative;width:100%;aspect-ratio:1/1;max-height:440px;margin:0 auto}
+  #hud{width:100%;height:100%;display:block}
+  .hud-tag{position:absolute;top:10px;left:12px;font-family:var(--mono);font-size:10px;
+           color:var(--faint);letter-spacing:1px}
+
+  /* ---- state tiles ---- */
+  .state-head{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}
+  .state-name{font-size:26px;font-weight:750;letter-spacing:.5px;color:var(--accent)}
+  .state-name.err{color:var(--err)}
+  .via{color:var(--faint);font-size:11px;font-family:var(--mono)}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  @media(max-width:560px){.tiles{grid-template-columns:repeat(2,1fr)}}
+  .tile{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 11px}
+  .tile .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint)}
+  .tile .v{font-size:19px;font-weight:650;margin-top:4px;font-family:var(--mono)}
+  .tile .v small{font-size:11px;color:var(--muted);font-weight:500}
+
+  /* ---- FSM diagram ---- */
+  #fsm{width:100%;height:auto;display:block}
+  .fsm-node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1;transition:.25s}
+  .fsm-node text{fill:var(--muted);font-size:9px;font-family:var(--mono);letter-spacing:.3px;transition:.25s}
+  .fsm-node.active rect{fill:rgba(92,200,255,.14);stroke:var(--accent);stroke-width:1.6}
+  .fsm-node.active text{fill:var(--accent);font-weight:700}
+  .fsm-node.err.active rect{fill:rgba(248,113,113,.15);stroke:var(--err)}
+  .fsm-node.err.active text{fill:var(--err)}
+  .fsm-edge{stroke:var(--line);stroke-width:1.2;fill:none;marker-end:url(#arrow)}
+  .fsm-edge.hot{stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 3px var(--accent))}
+
+  /* ---- meters ---- */
+  .meter{display:flex;align-items:center;gap:9px;margin:5px 0;font-size:11px}
+  .meter .lbl{width:26px;color:var(--muted);font-family:var(--mono)}
+  .meter .track{flex:1;height:6px;background:#0a0d13;border-radius:3px;overflow:hidden;position:relative}
+  .meter .track::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)}
+  .meter .fill{height:100%;border-radius:3px;transition:width .12s linear}
+  .meter .val{width:64px;text-align:right;font-family:var(--mono);color:var(--txt)}
+
+  /* ---- controls ---- */
+  .row{display:flex;gap:7px;flex-wrap:wrap}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+         padding:8px 11px;font-size:12px;cursor:pointer;transition:.15s;font-family:inherit}
+  button:hover{border-color:var(--accent-dim);background:#20273a}
+  button:active{transform:translateY(1px)}
+  button.wide{flex:1}
+  button.red{border-color:#5f2a2a;color:#ffb4b4} button.red:hover{background:rgba(248,113,113,.1)}
+  button.green{border-color:#215c41;color:#a7f3cf} button.green:hover{background:rgba(52,211,153,.1)}
+  button.warn{border-color:#6b4d12;color:#fcd77a}
+  button.on{background:var(--accent);border-color:var(--accent);color:#04121d;font-weight:700}
+  .dpad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px}
+  .dpad .sp{visibility:hidden}
+  select{width:100%;background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+          border-radius:8px;padding:9px;font-size:12px;font-family:inherit}
+  .hint{color:var(--faint);font-size:11px;margin-top:8px;line-height:1.5}
+  kbd{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);
+      border-bottom-width:2px;border-radius:4px;padding:1px 5px;font-size:10px;color:var(--txt)}
+
+  /* ---- streams ---- */
+  .stream{height:150px;overflow-y:auto;font-family:var(--mono);font-size:10.5px;line-height:1.65;
+          background:#080a0f;border:1px solid var(--line);border-radius:8px;padding:8px 9px}
+  .stream::-webkit-scrollbar{width:8px} .stream::-webkit-scrollbar-thumb{background:#222a3a;border-radius:4px}
+  #log{height:300px}
+  .ln{white-space:pre-wrap;word-break:break-word}
+  .ln .t{color:var(--faint)} .ln .src{color:var(--accent-dim)}
+  .ln.INFO .m{color:#cfd4e2} .ln.WARNING .m{color:var(--warn)}
+  .ln.ERROR .m,.ln.CRITICAL .m{color:var(--err)} .ln.DEBUG .m{color:var(--faint)}
+  .cx.tx{color:#8de0b4} .cx.rx{color:#8fbdf5} .cx .t{color:var(--faint)} .cx .a{color:var(--faint)}
+  .flash{animation:fl .5s ease-out}
+  @keyframes fl{from{background:rgba(92,200,255,.18)}to{background:transparent}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z" stroke="#5cc8ff" stroke-width="1.4"/><circle cx="12" cy="11" r="2.4" fill="#5cc8ff"/></svg></span>
+    <b>HERMES</b><span>ground station</span>
+  </div>
+  <span class="spacer"></span>
+  <span class="pill mode-auto" id="mode-pill"><span class="dot" style="background:currentColor"></span><span id="mode-txt">AUTO</span></span>
+  <span class="pill hw-sim" id="hw-pill"><span class="dot" style="background:currentColor"></span><span id="hw-txt">SIM</span></span>
+  <span class="loop mono" id="loop">— Hz</span>
+  <span class="link" id="link"><span class="dot"></span><span id="link-txt">connecting…</span></span>
+</header>
+
+<div class="wrap">
+  <!-- LEFT -->
+  <div class="col">
+    <div class="card">
+      <h2>Forward Camera</h2>
+      <img id="cam" src="/camera.mjpg" alt="camera">
+      <div class="meta"><span id="cam-src">—</span><span id="cam-fps">—</span></div>
+    </div>
+    <div class="card">
+      <h2>State Machine</h2>
+      <svg id="fsm" viewBox="0 0 288 210" preserveAspectRatio="xMidYMid meet">
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#3a4a6a"/></marker></defs>
+        <g id="fsm-edges"></g><g id="fsm-nodes"></g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="col">
+    <div class="card">
+      <h2>Top-Down Sensor View</h2>
+      <div class="hud-wrap">
+        <canvas id="hud"></canvas>
+        <div class="hud-tag">ToF · IMU HEADING · RANGE 0–1.2 m</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Vehicle State</h2>
+      <div class="state-head">
+        <span class="state-name" id="state">INIT</span>
+        <span class="via" id="via"></span>
+      </div>
+      <div class="tiles">
+        <div class="tile"><div class="k">Action</div><div class="v" id="action">STOP</div></div>
+        <div class="tile"><div class="k">Speed</div><div class="v" id="speed">0<small>/255</small></div></div>
+        <div class="tile"><div class="k">Steer</div><div class="v" id="steer">0°</div></div>
+        <div class="tile"><div class="k">Lap</div><div class="v" id="lap">0<small>/3</small></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Inertial · Range</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div><div class="meta" style="margin:0 0 4px"><span>ACCEL (m/s²)</span></div><div id="accel"></div></div>
+        <div><div class="meta" style="margin:0 0 4px"><span>GYRO (°/s)</span></div><div id="gyro"></div></div>
+      </div>
+      <div class="meta" style="margin:12px 0 4px"><span>TIME-OF-FLIGHT (mm)</span><span id="hdg-lbl">hdg 0°</span></div>
+      <div id="tof"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="col">
+    <div class="card">
+      <h2>Manual Driving</h2>
+      <div class="row">
+        <button class="wide" id="manual-btn" onclick="toggleManual()">Take Manual Control</button>
+      </div>
+      <div class="dpad">
+        <span class="sp"></span><button onmousedown="drive('FORWARD',0)" onmouseup="release()">▲</button><span class="sp"></span>
+        <button onmousedown="drive('FORWARD',-45)" onmouseup="release()">◀</button>
+        <button onmousedown="drive('STOP',0)" onmouseup="release()">■</button>
+        <button onmousedown="drive('FORWARD',45)" onmouseup="release()">▶</button>
+        <span class="sp"></span><button onmousedown="drive('BACKWARD',0)" onmouseup="release()">▼</button><span class="sp"></span>
+      </div>
+      <div class="hint">Hold the pad, or focus this page and use
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <kbd>space</kbd>.
+        On the Pi itself, <kbd>M</kbd> toggles manual.</div>
+    </div>
+
+    <div class="card">
+      <h2>Inject Perception Events</h2>
+      <div class="row">
+        <button onclick="ev('START_BUTTON_PRESSED')">Start</button>
+        <button class="red" onclick="ev('PILLAR_DETECTED_RED')">● Red pillar</button>
+        <button class="green" onclick="ev('PILLAR_DETECTED_GREEN')">● Green pillar</button>
+        <button onclick="ev('OBSTACLE_CLEARED')">Cleared</button>
+        <button onclick="ev('LAP_MARKER_DETECTED')">Lap marker</button>
+        <button onclick="ev('FINISH_ZONE_DETECTED')">Finish</button>
+        <button onclick="ev('PARKING_ZONE_DETECTED')">Parking zone</button>
+        <button onclick="ev('PARKING_COMPLETE')">Parked</button>
+        <button class="red" onclick="ev('FAILURE_DETECTED')">⚠ Failure</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scenario Simulation</h2>
+      <select id="scn" onchange="descScn()"></select>
+      <div class="row" style="margin-top:9px">
+        <button class="wide" onclick="runScn()">▶ Run</button>
+        <button onclick="cancelScn()">Cancel</button>
+      </div>
+      <div class="hint" id="scn-desc">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Pi ⇄ ESP32 Serial</h2>
+      <div class="stream" id="comms"></div>
+    </div>
+
+    <div class="card">
+      <h2>Event Log</h2>
+      <div class="stream" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const fmtT=ts=>{const d=new Date(ts*1000);return d.toLocaleTimeString('en-GB',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0')};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* ============================ live model ============================ */
+const M = { state:'INIT', action:'STOP', speed:0, steer:0, lap:0, target:3, mode:'AUTO',
+            heading:0, imu:{ax:0,ay:0,az:9.81,gx:0,gy:0,gz:0}, tof:{left_mm:2000,right_mm:2000},
+            simulated:true };
+// smoothed values for the HUD so motion is fluid, not steppy
+const S = { heading:0, left:2000, right:2000, speed:0 };
+let lastLoopTs=0, loopHz=0;
+
+/* ============================ FSM diagram ============================ */
+const FSM_NODES = {
+  INIT:            [8,   88], WAIT_FOR_START:[8, 128],
+  FOLLOW_TRACK:    [104, 88], AVOID_OBSTACLE:[104, 12],
+  LAP_CHECK:       [200, 88], FINAL_APPROACH:[200,150],
+  PARK:            [200,186], STOP:[104,186], ERROR:[8, 186],
+};
+const FSM_LABEL = { WAIT_FOR_START:'WAIT', FOLLOW_TRACK:'FOLLOW', AVOID_OBSTACLE:'AVOID',
+                    LAP_CHECK:'LAP_CHK', FINAL_APPROACH:'APPROACH', PARKING:'PARK' };
+const FSM_EDGES = [
+  ['INIT','WAIT_FOR_START'],['WAIT_FOR_START','FOLLOW_TRACK'],
+  ['FOLLOW_TRACK','AVOID_OBSTACLE'],['AVOID_OBSTACLE','FOLLOW_TRACK'],
+  ['FOLLOW_TRACK','LAP_CHECK'],['LAP_CHECK','FINAL_APPROACH'],
+  ['FINAL_APPROACH','PARK'],['PARK','STOP'],
+];
+const NW=84, NH=22;
+function buildFSM(){
+  const ne=$('fsm-nodes'), ee=$('fsm-edges');
+  const cx=k=>FSM_NODES[k][0]+NW/2, cy=k=>FSM_NODES[k][1]+NH/2;
+  FSM_EDGES.forEach(([a,b],i)=>{
+    const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('class','fsm-edge'); p.dataset.a=a; p.dataset.b=b;
+    // simple elbow: horizontal then vertical
+    const x1=cx(a),y1=cy(a),x2=cx(b),y2=cy(b);
+    p.setAttribute('d',`M${x1} ${y1} L${x2} ${y2}`);
+    ee.appendChild(p);
+  });
+  Object.keys(FSM_NODES).forEach(k=>{
+    const [x,y]=FSM_NODES[k];
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','fsm-node'+(k==='ERROR'?' err':'')); g.id='fsm-'+k;
+    g.innerHTML=`<rect x="${x}" y="${y}" width="${NW}" height="${NH}" rx="5"></rect>`+
+                `<text x="${x+NW/2}" y="${y+NH/2+3}" text-anchor="middle">${FSM_LABEL[k]||k}</text>`;
+    ne.appendChild(g);
+  });
+}
+function setFSM(state, via){
+  document.querySelectorAll('.fsm-node').forEach(n=>n.classList.remove('active'));
+  const cur=$('fsm-'+state); if(cur) cur.classList.add('active');
+  document.querySelectorAll('.fsm-edge').forEach(e=>{
+    const hot = e.dataset.b===state && (!via || true);
+    e.classList.toggle('hot', e.dataset.b===state);
+  });
+}
+
+/* ============================ meters ============================ */
+function buildMeters(){
+  const accel=[['ax',20],['ay',20],['az',20]], gyro=[['gx',360],['gy',360],['gz',360]];
+  $('accel').innerHTML=accel.map(([k])=>meterHTML(k)).join('');
+  $('gyro').innerHTML=gyro.map(([k])=>meterHTML(k)).join('');
+  $('tof').innerHTML=['left','right'].map(s=>meterHTML(s)).join('');
+}
+const meterHTML=k=>`<div class="meter"><span class="lbl">${k}</span><div class="track"><div class="fill" id="m-${k}"></div></div><span class="val" id="v-${k}">—</span></div>`;
+function meter(k,val,max,color){const f=$('m-'+k); if(!f)return;
+  f.style.width=clamp(Math.abs(val)/max*50,0,50)+'%';
+  f.style.marginLeft=val<0?clamp(50-Math.abs(val)/max*50,0,50)+'%':'50%';
+  f.style.background=color||'var(--accent)';}
+function meterAbs(k,val,max,color){const f=$('m-'+k); if(!f)return;
+  f.style.marginLeft='0'; f.style.width=clamp(val/max*100,0,100)+'%'; f.style.background=color;}
+
+/* ============================ HUD (top-down) ============================ */
+const hud=$('hud'), hx=hud.getContext('2d');
+let sweep=0;
+function drawHUD(){
+  const dpr=devicePixelRatio||1, r=hud.getBoundingClientRect();
+  hud.width=r.width*dpr; hud.height=r.height*dpr;
+  hx.setTransform(dpr,0,0,dpr,0,0);
+  const W=r.width,H=r.height,cx=W/2,cy=H/2, R=Math.min(W,H)/2-16, MAX=1200;
+  hx.clearRect(0,0,W,H);
+  // ease values toward targets
+  S.heading+=(M.heading-S.heading)*0.15;
+  S.left+=(M.tof.left_mm-S.left)*0.2; S.right+=(M.tof.right_mm-S.right)*0.2;
+  S.speed+=(M.speed-S.speed)*0.2;
+
+  // range rings
+  hx.font='9px ui-monospace,monospace';
+  for(const mm of [300,600,900,1200]){
+    const rr=mm/MAX*R;
+    hx.beginPath(); hx.arc(cx,cy,rr,0,Math.PI*2);
+    hx.strokeStyle='rgba(92,200,255,.10)'; hx.lineWidth=1; hx.stroke();
+    hx.fillStyle='rgba(139,147,168,.5)'; hx.fillText((mm/1000).toFixed(1)+'m', cx+3, cy-rr+11);
+  }
+  // crosshair
+  hx.strokeStyle='rgba(92,200,255,.07)';
+  hx.beginPath(); hx.moveTo(cx-R,cy); hx.lineTo(cx+R,cy); hx.moveTo(cx,cy-R); hx.lineTo(cx,cy+R); hx.stroke();
+
+  // radar sweep
+  sweep=(sweep+0.012)%(Math.PI*2);
+  const g=hx.createConicGradient?null:null;
+  hx.save(); hx.beginPath(); hx.moveTo(cx,cy);
+  hx.arc(cx,cy,R,sweep,sweep+0.5); hx.closePath();
+  hx.fillStyle='rgba(92,200,255,.05)'; hx.fill(); hx.restore();
+
+  const hr=S.heading*Math.PI/180; // heading, 0 = up (screen -y)
+  // ToF beams: left = heading-90°, right = heading+90°
+  drawBeam(cx,cy,R,MAX,hr-Math.PI/2,S.left,'L');
+  drawBeam(cx,cy,R,MAX,hr+Math.PI/2,S.right,'R');
+
+  // robot chevron
+  hx.save(); hx.translate(cx,cy); hx.rotate(hr);
+  hx.beginPath(); hx.moveTo(0,-13); hx.lineTo(9,10); hx.lineTo(0,5); hx.lineTo(-9,10); hx.closePath();
+  hx.fillStyle='#5cc8ff'; hx.shadowColor='#5cc8ff'; hx.shadowBlur=10; hx.fill();
+  hx.shadowBlur=0;
+  // velocity vector
+  const v=S.speed/255; if(v>0.02){hx.beginPath();hx.moveTo(0,-13);hx.lineTo(0,-13-v*R*0.5);
+    hx.strokeStyle='rgba(52,211,153,.8)';hx.lineWidth=2;hx.stroke();}
+  hx.restore();
+  requestAnimationFrame(drawHUD);
+}
+function drawBeam(cx,cy,R,MAX,ang,mm,tag){
+  const d=clamp(mm/MAX,0,1)*R, ex=cx+Math.sin(ang)*d, ey=cy-Math.cos(ang)*d;
+  const near=clamp(1-mm/1200,0,1);
+  const col=`rgb(${Math.round(90+near*165)},${Math.round(200-near*140)},${Math.round(153-near*80)})`;
+  hx.beginPath(); hx.moveTo(cx,cy); hx.lineTo(ex,ey);
+  hx.strokeStyle=col; hx.lineWidth=1.6; hx.globalAlpha=.85; hx.stroke(); hx.globalAlpha=1;
+  hx.beginPath(); hx.arc(ex,ey,3.5,0,Math.PI*2); hx.fillStyle=col; hx.fill();
+  hx.fillStyle='rgba(233,236,244,.9)'; hx.font='10px ui-monospace,monospace';
+  hx.fillText(Math.round(mm)+'', ex+ (Math.sin(ang)<0?-30:6), ey+3);
+}
+
+/* ============================ render ============================ */
+function renderStatus(s){
+  Object.assign(M,{state:s.state,action:s.action,speed:s.speed,steer:s.steer,lap:s.lap,
+    target:s.target_laps,mode:s.mode,heading:s.heading_deg,simulated:s.simulated});
+  if(s.imu) M.imu=s.imu; if(s.tof) M.tof=s.tof;
+
+  $('state').textContent=s.state; $('state').classList.toggle('err',s.state==='ERROR');
+  $('action').textContent=s.action;
+  $('speed').innerHTML=s.speed+'<small>/255</small>';
+  $('steer').textContent=(s.steer>0?'+':'')+s.steer+'°';
+  $('lap').innerHTML=s.lap+'<small>/'+s.target_laps+'</small>';
+  $('hdg-lbl').textContent='hdg '+(s.heading_deg||0).toFixed(0)+'°';
+
+  const mp=$('mode-pill'); mp.className='pill '+(s.mode==='MANUAL'?'mode-manual':'mode-auto'); $('mode-txt').textContent=s.mode;
+  const hp=$('hw-pill'); hp.className='pill '+(s.simulated?'hw-sim':'hw-real'); $('hw-txt').textContent=s.simulated?'SIMULATED HW':'REAL HW';
+
+  if(s.imu){ meter('ax',s.imu.ax,20); meter('ay',s.imu.ay,20); meter('az',s.imu.az,20,'#3a4a6a');
+    meter('gx',s.imu.gx,360); meter('gy',s.imu.gy,360); meter('gz',s.imu.gz,360,'var(--warn)');
+    ['ax','ay','az'].forEach(k=>$('v-'+k).textContent=s.imu[k].toFixed(2));
+    ['gx','gy','gz'].forEach(k=>$('v-'+k).textContent=s.imu[k].toFixed(1)); }
+  if(s.tof){ const near=v=>v<250?'var(--err)':v<450?'var(--warn)':'var(--ok)';
+    meterAbs('left',1200-s.tof.left_mm,1200,near(s.tof.left_mm));
+    meterAbs('right',1200-s.tof.right_mm,1200,near(s.tof.right_mm));
+    $('v-left').textContent=s.tof.left_mm.toFixed(0); $('v-right').textContent=s.tof.right_mm.toFixed(0); }
+  setFSM(s.state);
+}
+function addLog(r){
+  const el=$('log'), near=el.scrollTop+el.clientHeight>=el.scrollHeight-30;
+  const d=document.createElement('div'); d.className='ln '+(r.level||'INFO');
+  d.innerHTML=`<span class="t">${fmtT(r.ts)}</span> <span class="src">${(r.module||'').replace('hermes.','')}</span> <span class="m">${esc(r.message||'')}</span>`;
+  el.appendChild(d); while(el.children.length>400)el.removeChild(el.firstChild); if(near)el.scrollTop=el.scrollHeight;
+}
+function addComms(r){
+  const el=$('comms'), near=el.scrollTop+el.clientHeight>=el.scrollHeight-30;
+  const d=document.createElement('div'); d.className='cx '+r.direction;
+  d.innerHTML=`<span class="t">${fmtT(r.ts)}</span> <span class="a">${r.direction==='tx'?'▸ ESP':'◂ PI '}</span> ${esc(r.packet)}`;
+  el.appendChild(d); while(el.children.length>250)el.removeChild(el.firstChild); if(near)el.scrollTop=el.scrollHeight;
+}
+
+/* ============================ SSE ============================ */
+function connect(){
+  const es=new EventSource('/stream');
+  es.onopen=()=>{$('link').classList.add('up'); $('link-txt').textContent='telemetry live';};
+  es.onerror=()=>{$('link').classList.remove('up'); $('link-txt').textContent='reconnecting…';};
+  es.onmessage=e=>{
+    const r=JSON.parse(e.data);
+    if(r.channel==='snapshot'){ const snap=r.data;
+      if(snap.status) renderStatus(snap.status);
+      (hub_logs(snap)).forEach(addLog); return; }
+    if(r.channel==='status'){ renderStatus(r);
+      const now=performance.now(); if(lastLoopTs){loopHz=1000/(now-lastLoopTs);} lastLoopTs=now;
+      $('loop').textContent=loopHz.toFixed(0)+' Hz'; }
+    else if(r.channel==='log') addLog(r);
+    else if(r.channel==='comms') addComms(r);
+    else if(r.channel==='state'){ setFSM(r.new); $('via').textContent='via '+r.via;
+      const n=$('fsm-'+r.new); if(n) n.classList.add('flash'); setTimeout(()=>n&&n.classList.remove('flash'),500); }
+    else if(r.channel==='camera'){ $('cam-src').textContent=r.source; $('cam-fps').textContent=r.width+'×'+r.height+' · '+r.fps+' fps'; }
+  };
+}
+const hub_logs=snap=>snap.log?[snap.log]:[];
+
+/* ============================ actions ============================ */
+let manualOn=false, held=false;
+function ev(n){ post('/api/event',{event:n}); }
+function toggleManual(){ manualOn=!manualOn; post('/api/manual',{active:manualOn});
+  const b=$('manual-btn'); b.textContent=manualOn?'Release to Autonomous':'Take Manual Control'; b.classList.toggle('on',manualOn); }
+function drive(action,steer){ held=true; if(!manualOn){manualOn=true;$('manual-btn').textContent='Release to Autonomous';$('manual-btn').classList.add('on');}
+  const speed=action==='STOP'?0:action==='BACKWARD'?100:150;
+  post('/api/manual',{active:true,target:{speed,steer,action}}); }
+function release(){ held=false; post('/api/manual',{active:true,target:{speed:0,steer:0,action:'STOP'}}); }
+function post(url,body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+
+let scns=[];
+function loadScn(){ fetch('/api/scenarios').then(r=>r.json()).then(d=>{scns=d.scenarios;
+  $('scn').innerHTML=scns.map(s=>`<option value="${s.file}">${s.name} · ${s.event_count} events</option>`).join(''); descScn();}); }
+function descScn(){ const s=scns.find(x=>x.file===$('scn').value); $('scn-desc').textContent=s?s.description:'—'; }
+function runScn(){ post('/api/scenarios',{action:'run',scenario:$('scn').value}); }
+function cancelScn(){ post('/api/scenarios',{action:'cancel'}); }
+
+// browser keyboard driving
+const KEYMAP={w:['FORWARD',0],s:['BACKWARD',0],a:['FORWARD',-45],d:['FORWARD',45]};
+addEventListener('keydown',e=>{ if(e.repeat)return; const k=e.key.toLowerCase();
+  if(KEYMAP[k]) drive(KEYMAP[k][0],KEYMAP[k][1]); else if(e.key===' ') drive('STOP',0); });
+addEventListener('keyup',e=>{ if('wsad '.includes(e.key.toLowerCase())) release(); });
+
+buildFSM(); buildMeters(); loadScn(); connect(); requestAnimationFrame(drawHUD);
+</script>
+</body>
+</html>
