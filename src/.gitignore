@@ -2,3 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Runtime logs (written by utils/logger.py)
+logs/

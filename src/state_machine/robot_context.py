@@ -121,8 +121,3 @@ class RobotContext:
             f"error={self.error_flag}"
             f")"
         )
-        
-        
-ctx = RobotContext()
-
-logger.info(ctx)

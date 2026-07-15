@@ -1,0 +1,9 @@
+{
+  "name": "obstacle_avoid",
+  "description": "Start and handle a single red pillar, then resume track following.",
+  "events": [
+    {"at": 0.5, "event": "START_BUTTON_PRESSED"},
+    {"at": 2.0, "event": "PILLAR_DETECTED_RED"},
+    {"at": 4.0, "event": "OBSTACLE_CLEARED"}
+  ]
+}
