@@ -116,3 +116,6 @@ def build_ack_packet(tag: str = "") -> str:
     """Builds an ACK packet. tag is optional and lets the other side match the
     ACK to a specific outgoing packet if you start numbering packets later."""
     return f"ACK,{tag}\n" if tag else "ACK\n"
+
+
+serialize_packet = serialize_command

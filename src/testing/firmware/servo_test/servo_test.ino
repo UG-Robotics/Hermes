@@ -1,6 +1,6 @@
 #include <ESP32Servo.h>
 
-const int SERVO_PIN = 12;
+const int SERVO_PIN = 14;
 
 Servo steering;
 

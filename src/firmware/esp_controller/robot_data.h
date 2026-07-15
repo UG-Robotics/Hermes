@@ -1,22 +1,24 @@
 #pragma once
 
+#include <Arduino.h>
+
 struct RobotCommand
 {
-    int speed = 0;          // -100 to 100
-    int steering = 0;       // -45 to +45 degrees from centre
+    int speed = 0;
+    int steer = 0;
+    String action = "STOP";
+    int mode = 1;
+    bool valid = false;
 };
 
 struct RobotTelemetry
 {
-    float yaw = 0.0;
-    float pitch = 0.0;
-    float roll = 0.0;
-
-    int leftToF = -1;
-    int rightToF = -1;
-
-    bool imuConnected = false;
+    float ax = 0;
+    float ay = 0;
+    float az = 0;
+    float gx = 0;
+    float gy = 0;
+    float gz = 0;
+    float tof1_mm = 0;
+    float tof2_mm = 0;
 };
-
-extern RobotCommand command;
-extern RobotTelemetry telemetry;

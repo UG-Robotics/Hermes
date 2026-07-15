@@ -1,5 +1,6 @@
 # Serial Communication Settings
-SERIAL_PORT = "/dev/ttyACM0"
+SERIAL_PORT = "/dev/ttyUSB0"
+# SERIAL_PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 SERIAL_TIMEOUT = 0.1  # seconds
 
