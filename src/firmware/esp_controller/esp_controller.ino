@@ -45,25 +45,71 @@
 // }
 
 #include "serial_protocol.h"
-#include "telemetry.h"
+#include "config.h"
 #include "motor.h"
+#include "servo_control.h"
+
+namespace
+{
+    RobotCommand activeCommand;
+
+    int speedToMotorDuty(const RobotCommand &command)
+    {
+        int speed = constrain(command.speed, 0, 255);
+        return map(speed, 0, 255, 0, 100);
+    }
+
+    void applyCommand(const RobotCommand &command)
+    {
+        if (command.action == "STOP")
+        {
+            setMotorSpeed(0);
+            setSteeringAngle(SERVO_CENTER);
+            return;
+        }
+
+        int motorSpeed = speedToMotorDuty(command);
+        if (command.action == "BACKWARD")
+        {
+            motorSpeed = -motorSpeed;
+        }
+        else if (command.action != "FORWARD")
+        {
+            motorSpeed = 0;
+        }
+
+        setMotorSpeed(motorSpeed);
+        setSteeringAngle(map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT));
+    }
+}
 
 void setup() {
     initSerial();
     initMotor();
-
-    // quick test for motors
-    setMotorSpeed(40);
-    delay(2000);
-    setMotorSpeed(0);
-    delay(1000);
-    setMotorSpeed(-40);
-    delay(2000);
-    setMotorSpeed(0);
+    initServo();
+    activeCommand.valid = true;
+    applyCommand(activeCommand);
 }
 
 void loop() {
     processSerial();
+
+    if (commandAvailable()) {
+        activeCommand = getLatestCommand();
+    }
+
+    if (emergencyActive()) {
+        setMotorSpeed(0);
+        setSteeringAngle(SERVO_CENTER);
+        clearEmergency();
+    }
+    else if (activeCommand.valid) {
+        applyCommand(activeCommand);
+    }
+
     updateMotor();
-    sendTelemetry();
+    updateServo();
+
+    RobotTelemetry telemetry;
+    sendTelemetry(telemetry);
 }

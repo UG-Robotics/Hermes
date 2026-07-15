@@ -19,7 +19,7 @@ const int MOTOR_PWM_FREQ = 1000;
 const int MOTOR_PWM_RESOLUTION = 8;
 
 // Steering servo
-const int PIN_STEERING_SERVO = 12;
+const int PIN_STEERING_SERVO = 14;
 const int SERVO_CENTER = 90;
 const int SERVO_LEFT = 45;
 const int SERVO_RIGHT = 135;

@@ -9,7 +9,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[0]))
 from testing.test_transitions import run_simulation
 from config.robot_config import SERIAL_PORT, BAUD_RATE, SERIAL_TIMEOUT
 from hardware.buttons import KeyboardOverrideListener
-from communication.protocol import serialize_packet, get_emergency_packet
+from communication.protocol import serialize_command, get_emergency_packet
 from communication.serial_link import SerialLink
 from communication.packet_parser import parse_incoming
 
@@ -67,7 +67,7 @@ def run_realtime_loop():
                 )
                 mode_flag = 0
             
-            packet = serialize_packet(speed, steer, action, mode_flag)
+            packet = serialize_command(speed, steer, action, mode_flag)
             link.send(packet)
 
             incoming = link.read_line()
