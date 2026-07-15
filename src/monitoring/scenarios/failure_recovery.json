@@ -1,0 +1,9 @@
+{
+  "name": "failure_recovery",
+  "description": "Start, run briefly, then a critical failure forces the ERROR state.",
+  "events": [
+    {"at": 0.5, "event": "START_BUTTON_PRESSED"},
+    {"at": 2.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 3.5, "event": "FAILURE_DETECTED"}
+  ]
+}

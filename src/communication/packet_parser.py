@@ -36,8 +36,10 @@
 #     return {"type": "unknown", "raw": text}
 
 from utils.logger import get_logger
+from utils.telemetry_hub import get_hub
 
 logger = get_logger(__name__)
+hub = get_hub()
 
 # Fields expected after "TEL," — ax, ay, az, gx, gy, gz (LSM6DSOX 6-axis IMU)
 # plus tof1_mm, tof2_mm.
@@ -88,7 +90,11 @@ def parse_incoming(line: str):
         except ValueError:
             logger.warning(f"[MCU][TEL] non-numeric field in: {text}")
             return {"type": "unknown", "raw": text}
-        telemetry = dict(zip(TEL_FIELD_NAMES, floats))
+        values = dict(zip(TEL_FIELD_NAMES, floats))
+        # Publish decoded telemetry so IMU/ToF interfaces and the dashboard can
+        # read the freshest sensor values from one place.
+        hub.telemetry(values)
+        telemetry = dict(values)
         telemetry["type"] = "telemetry"
         telemetry["raw"] = text
         logger.debug(f"[MCU][TEL] {telemetry}")

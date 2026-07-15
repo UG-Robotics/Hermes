@@ -1,0 +1,18 @@
+# Hermes robot software dependencies.
+#
+# The core control loop and the whole simulation/logging path need only the
+# standard library — you can run `python main.py --mode sim` on a bare Python.
+# The packages below unlock the optional pieces:
+
+# --- Monitoring dashboard (--mode dashboard) ---
+flask>=3.0            # web server for the monitoring UI (SSE + MJPEG + REST)
+
+# --- Real hardware (Raspberry Pi) ---
+pyserial>=3.5         # Pi <-> ESP32 serial link
+pynput>=1.7           # laptop-keyboard manual driving
+
+# --- Camera & synthetic vision ---
+pillow>=10.0          # synthetic camera frames + JPEG encoding for the stream
+numpy>=1.24           # frame buffers / perception maths
+# picamera2           # Pi Camera on Raspberry Pi OS Bookworm (apt: python3-picamera2)
+# opencv-python       # USB webcam fallback + real-camera JPEG encoding
