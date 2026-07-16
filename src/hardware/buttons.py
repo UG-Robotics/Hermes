@@ -55,6 +55,7 @@ class KeyboardOverrideListener:
         self._lock = threading.Lock()
         self._manual_mode_active = False
         self._pressed_keys = set()
+        self._key_counts = {}
         self._listener = None
         self._stdin_thread = None
         self._stdin_stop = threading.Event()
@@ -100,15 +101,17 @@ class KeyboardOverrideListener:
             if char == KEY_TOGGLE_MANUAL:
                 self._manual_mode_active = not self._manual_mode_active
                 self._pressed_keys.clear()
+                self._key_counts.clear()
                 logger.warning(f"Manual mode: {'ENABLED' if self._manual_mode_active else 'DISABLED'}")
                 hub.mode(self._manual_mode_active)
             elif char == KEY_STOP:
                 self._pressed_keys.clear()
+                self._key_counts.clear()
                 logger.info("[MANUAL] STOP (spacebar)")
             elif char in (KEY_FORWARD, KEY_BACKWARD, KEY_LEFT, KEY_RIGHT):
-                if char not in self._pressed_keys:
-                    self._pressed_keys.add(char)
-                    logger.info(f"[MANUAL] key down: '{char}'")
+                self._pressed_keys.add(char)
+                self._key_counts[char] = self._key_counts.get(char, 0) + 1
+                logger.info(f"[MANUAL] key down: '{char}'")
 
     def _on_release(self, key):
         char = self._key_char(key)
@@ -116,7 +119,12 @@ class KeyboardOverrideListener:
             return
         with self._lock:
             if char in self._pressed_keys:
-                self._pressed_keys.discard(char)
+                count = self._key_counts.get(char, 0)
+                if count <= 1:
+                    self._pressed_keys.discard(char)
+                    self._key_counts.pop(char, None)
+                else:
+                    self._key_counts[char] = count - 1
                 logger.info(f"[MANUAL] key up: '{char}'")
 
     @staticmethod
@@ -206,6 +214,7 @@ class KeyboardOverrideListener:
             self._manual_mode_active = bool(active)
             if not active:
                 self._pressed_keys.clear()
+                self._key_counts.clear()
                 self._remote_target = None
         logger.warning(f"Manual mode (remote): {'ENABLED' if active else 'DISABLED'}")
         hub.mode(bool(active))
