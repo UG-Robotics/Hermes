@@ -52,14 +52,15 @@ Guided by our vision to ***"never stop developing unless we stop learning,"*** w
 
 | 📁 Folder | 🎯 Technical Content | 📖 Detailed Documentation |
 |-----------|----------------------|---------------------------|
-| **🧮 MATLAB** | **Vision System Calibration**<br>• LAB colorspace analysis<br>• Threshold optimization<br>• Lighting condition testing | [🔗 Explore MATLAB Documentation](matlab/README.md) |
+| **🧩 Components** | **Hardware Reference**<br>• Component gallery<br>• Datasheets<br>• Part photos | [🔗 Explore Component Documentation](components/README.md) |
 | **⚙ Models** | **Mechanical Engineering**<br>• 3D CAD designs<br>• Assembly instructions<br>• Gear system calculations | [🔗 Explore 3D Models & Assembly Documentation](models/README.md) |
 | **🔌 Schemes** | **Electrical Systems**<br>• Wiring diagrams<br>• Power management<br>• Component schematics & datasheets | [🔗 Explore Schematics & Wiring Documentation](schemes/README.md) |
 | **💾 Source Code** | **Software Algorithms**<br>• Navigation logic<br>• Sensor fusion<br>• Control systems | [🔗 Explore Software & Algorithms Documentation](src/README.md) |
+| **📡 Monitoring** | **Live Runtime Tools**<br>• Dashboard UI<br>• Scenario simulation<br>• Telemetry visualization | [🔗 Explore Monitoring Documentation](src/monitoring/README.md) |
+| **🧠 State Machine** | **Behaviour Logic**<br>• Events and transitions<br>• Priority handling<br>• Robot state orchestration | [🔗 Explore State Machine Documentation](src/state_machine/README.md) |
 | **👥 Team Photos** | **Team Documentation**<br>• Member profiles<br>• Development journey<br>• Competition preparation | [🔗 Explore Team Photos Documentation](t-photos/README.md) |
 | **🚗 Vehicle Photos** | **Vehicle Documentation**<br>• Multi-angle views<br>• Component labeling<br>• System integration | [🔗 Explore Vehicle Photos Documentation](v-photos/README.md) |
 | **🎥 Videos** | **Performance Validation**<br>• Challenge demonstrations<br>• Engineering tests<br>• System validation | [🔗 Explore Performance Videos Documentation](video/README.md) |
-| **📚 Other Resources** | **Technical References**<br>• Component images<br>• Development resources<br>• Additional documentation | [🔗 Explore Additional Resources Documentation](other/README.md) |
 
 </div>
 

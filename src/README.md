@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains the complete runtime software stack for the autonomous vehicle used by University of Ghana Team B (HERMES) in the WRO Future Engineers competition.
+This directory contains the complete runtime software stack for the autonomous vehicle used in the WRO Future Engineers competition.
 
 The purpose of this folder is to organize all software required for:
 
@@ -14,6 +14,8 @@ The purpose of this folder is to organize all software required for:
 * communication with embedded hardware
 
 This directory intentionally contains ONLY software directly related to the operation of the physical robot during runtime.
+
+In practice, that includes the live monitoring dashboard, state-machine logic, testing assets, and the embedded controller firmware alongside the main autonomy loop.
 
 The following are intentionally excluded from this folder:
 
@@ -78,6 +80,9 @@ src/
 ├── control/
 ├── communication/
 ├── hardware/
+├── monitoring/
+├── testing/
+├── firmware/
 ├── utils/
 └── config/
 ```
@@ -219,6 +224,98 @@ It should NOT:
 
 * process raw camera frames
 * directly generate PWM signals
+
+---
+
+# `monitoring/`
+
+Responsible for the live dashboard, scenario runner, and telemetry visualization used during development and testing.
+
+This module mirrors the same telemetry stream used by the robot runtime, so the dashboard and the headless scenario runner always show the current system state.
+
+## Responsibilities
+
+* dashboard UI
+* scenario simulation
+* telemetry visualization
+* manual control hooks
+* live log display
+
+## Example Files
+
+```text
+monitoring/
+├── dashboard.py
+├── scenario.py
+├── __init__.py
+├── scenarios/
+└── templates/
+```
+
+## Notes
+
+The full module documentation lives in `monitoring/README.md`.
+
+---
+
+# `testing/`
+
+Responsible for automated regression tests and mock event helpers.
+
+This folder keeps verification assets separate from the runtime stack while still documenting the expected behaviour of the major software subsystems.
+
+## Responsibilities
+
+* unit tests
+* protocol validation
+* state-machine regression coverage
+* robot-context checks
+* mock event generation
+
+## Example Files
+
+```text
+testing/
+├── test_drive_command.py
+├── test_event_queue.py
+├── test_protocol.py
+├── test_robot_context.py
+├── test_transitions.py
+└── mock_events.py
+```
+
+---
+
+# `firmware/esp_controller/`
+
+Responsible for the microcontroller firmware that executes low-level motor, servo, and telemetry tasks.
+
+This firmware acts as the bridge between high-level autonomy code and the physical actuators on the robot.
+
+## Responsibilities
+
+* serial protocol handling
+* motor control
+* servo control
+* telemetry reporting
+* embedded configuration
+
+## Example Files
+
+```text
+firmware/esp_controller/
+├── esp_controller.ino
+├── config.h
+├── motor.cpp
+├── motor.h
+├── servo_control.cpp
+├── servo_control.h
+├── serial_protocol.cpp
+├── serial_protocol.h
+├── telemetry.cpp
+├── telemetry.h
+└── robot_data.h
+```
 
 ---
 
