@@ -24,22 +24,34 @@ def drive_command(state: State, context: RobotContext) -> tuple[int, int, str]:
 
     if state == State.FOLLOW_TRACK:
         speed = SPEED_DEFAULT_FORWARD
-        steer = 0  # straight — replace with PID/lane output later
+        # This is only the intent handed to the IMU heading-hold controller
+        # (control/steering_control.py) in runtime.py, which locks "straight
+        # from here" and does the actual closed-loop correction, not the
+        # final steer value sent to the ESP32.
+        steer = 0
         action = "FORWARD"
-        logger.debug(f"[DRIVE] FOLLOW_TRACK → speed={speed}, steer={steer}")
+        logger.debug(f"[DRIVE] FOLLOW_TRACK -> speed={speed}, steer intent={steer}")
 
     elif state == State.AVOID_OBSTACLE:
-        # Placeholder: steer based on last seen pillar color
-        # Red pillar → go left (negative steer), Green → go right
-        if context.last_pillar_color == "RED":
-            steer = -30
+        # Competition rule: pass RIGHT of RED pillars, LEFT of GREEN pillars.
+        # steer is a turn-by intent in degrees (+ = right, - = left), fed to
+        # the IMU heading-hold controller in runtime.py, not sent raw.
+        # context.pillar_steer_angle is set by the vision pipeline
+        # (perception/pillar_detection.py via runtime.py) when a real pillar
+        # was seen; it falls back to a sane, correctly-signed default if this
+        # state was entered via a manually-injected/scenario event with no
+        # vision metadata attached.
+        if context.pillar_steer_angle:
+            steer = context.pillar_steer_angle
+        elif context.last_pillar_color == "RED":
+            steer = 30   # pass on the right
         elif context.last_pillar_color == "GREEN":
-            steer = 30
+            steer = -30  # pass on the left
         else:
             steer = 0
         speed = SPEED_DEFAULT_FORWARD
         action = "FORWARD"
-        logger.debug(f"[DRIVE] AVOID_OBSTACLE → pillar={context.last_pillar_color}, steer={steer}")
+        logger.debug(f"[DRIVE] AVOID_OBSTACLE -> pillar={context.last_pillar_color}, steer intent={steer}")
 
     elif state == State.LAP_CHECK:
         # Slow down briefly while lap count is being verified

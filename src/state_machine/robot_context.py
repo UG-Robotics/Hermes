@@ -16,6 +16,17 @@ class RobotContext:
 
     last_pillar_color: str | None = None
 
+    # Set by the pillar-avoidance pipeline (perception/pillar_detection.py via
+    # runtime.py) whenever a pillar is detected/latched. steer is the P-control
+    # avoidance angle in the same -90..90 units as everything else; distance_mm
+    # is the monocular distance estimate to the pillar (None if unknown).
+    pillar_steer_angle: int = 0
+    pillar_distance_mm: float | None = None
+
+    # IMU heading-hold target, in degrees, set by control/steering_control.py.
+    # None means "no lock yet" (e.g. before the IMU has produced a reading).
+    target_heading_deg: float | None = None
+
     obstacle_active: bool = False
 
     parking_detected: bool = False
@@ -90,6 +101,9 @@ class RobotContext:
         self.previous_state = None
 
         self.last_pillar_color = None
+        self.pillar_steer_angle = 0
+        self.pillar_distance_mm = None
+        self.target_heading_deg = None
 
         self.obstacle_active = False
 

@@ -30,6 +30,7 @@
 
 #include "serial_protocol.h"
 #include "config.h"
+#include "start_button.h"
 
 // ASSUMPTION: config.h defines BAUD_RATE (carried over from your original
 // serial_protocol.cpp, which already relied on this).
@@ -96,6 +97,31 @@ namespace
         sendStatus("EMG ack");
     }
 
+    void handleEvent(String fields[], size_t n)
+    {
+        // Serial-monitor test hook: EVT,START_BUTTON_PRESSED
+        // This mirrors the real button's outgoing line so the Pi runtime can
+        // exercise the full event pipeline without wired hardware.
+        if (n != 2)
+        {
+            sendStatus("ERR malformed EVT: " + String(n) + " fields");
+            return;
+        }
+
+        String name = fields[1];
+        name.trim();
+        name.toUpperCase();
+
+        if (name == "START_BUTTON_PRESSED")
+        {
+            emitStartButtonPressed();
+        }
+        else
+        {
+            sendStatus("ERR unsupported EVT: " + name);
+        }
+    }
+
     void handleLine(const String &line)
     {
         if (line.length() == 0)
@@ -116,6 +142,10 @@ namespace
         else if (tag == "EMG")
         {
             handleEmg(fields, n);
+        }
+        else if (tag == "EVT")
+        {
+            handleEvent(fields, n);
         }
         else if (tag == "PING")
         {

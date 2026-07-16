@@ -11,18 +11,25 @@ class TestDriveCommand(unittest.TestCase):
         self.assertEqual(action, "FORWARD")
         self.assertGreater(speed, 0)
 
-    def test_avoid_red_pillar_steers_left(self):
+    def test_avoid_red_pillar_steers_right(self):
         ctx = RobotContext()
         ctx.last_pillar_color = "RED"
         _, steer, action = drive_command(State.AVOID_OBSTACLE, ctx)
-        self.assertLess(steer, 0)
+        self.assertGreater(steer, 0)
         self.assertEqual(action, "FORWARD")
 
-    def test_avoid_green_pillar_steers_right(self):
+    def test_avoid_green_pillar_steers_left(self):
         ctx = RobotContext()
         ctx.last_pillar_color = "GREEN"
         _, steer, action = drive_command(State.AVOID_OBSTACLE, ctx)
-        self.assertGreater(steer, 0)
+        self.assertLess(steer, 0)
+
+    def test_vision_steer_angle_takes_priority(self):
+        ctx = RobotContext()
+        ctx.last_pillar_color = "RED"
+        ctx.pillar_steer_angle = 47
+        _, steer, _ = drive_command(State.AVOID_OBSTACLE, ctx)
+        self.assertEqual(steer, 47)
 
     def test_stop_state_halts(self):
         ctx = RobotContext()

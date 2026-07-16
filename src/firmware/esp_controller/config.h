@@ -35,3 +35,9 @@ const int long BAUD_RATE = 115200;
 
 // telemetry
 const unsigned long TELEMETRY_INTERVAL = 100;
+
+// IMU mounting: flip this to -1 on the bench if a clockwise (rightward) spin
+// of the chassis produces a DECREASING gz reading instead of increasing --
+// the Pi integrates heading += gz*dt and expects +gz = turning right, to
+// match the steer sign convention used everywhere else (+ = right).
+const int IMU_GZ_SIGN = 1;

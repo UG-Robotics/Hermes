@@ -1,15 +1,23 @@
 """
 IMU interface.
 
-The IMU physically lives on the ESP32; its readings reach the Pi inside TEL
-telemetry packets. This class is the clean, higher-level view of that data: the
-rest of the software asks the IMU for acceleration / angular rate / heading and
-never has to know the numbers arrived over serial (real or simulated).
+OWNERSHIP: the IMU is physical hardware wired to the ESP32's I2C bus (see
+firmware/esp_controller/imu.cpp). The Pi NEVER opens an I2C bus or reads a
+register itself -- doing so here would be wrong, since the Pi has no wire to
+that sensor at all. The ESP32 is the only thing that reads raw accel/gyro
+registers; it streams the result up as a TEL packet, which
+communication/packet_parser.py decodes and publishes to the TelemetryHub via
+hub.telemetry(). This class only ever reads that published value back out
+(see _latest() below) -- real hardware and hardware/sim_esp32.py's simulated
+telemetry are indistinguishable from here, which is exactly the point.
 
-It reads the latest values from the TelemetryHub, so it behaves identically
-whether a real ESP32 or the virtual one produced them. Heading is integrated
-from the gz (yaw-rate) channel, which is exactly what the wall-follower needs
-and mirrors the gyro-free fusion approach used on the sibling robot.
+The one thing this class DOES compute on the Pi -- integrating gz (yaw rate)
+into a running heading estimate -- is a CONTROL computation over data the
+ESP32 already sent, not a hardware read. That distinction matters: it's what
+lets control/steering_control.py's heading-hold PID live on the Pi (where the
+rest of the decision-making already is) without the Pi pretending to own the
+sensor. If you ever find yourself adding smbus/board.SCL/RPi.GPIO imports to
+this file, stop -- that reading belongs in firmware/esp_controller/imu.cpp.
 """
 
 from __future__ import annotations

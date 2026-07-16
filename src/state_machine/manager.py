@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 class StateMachine:
 
-    def __init__(self):
+    def __init__(self, camera_ready: bool = True, serial_ready: bool = True):
         self.context = RobotContext()
         self.current_state = State.INIT
 
@@ -27,17 +27,23 @@ class StateMachine:
 
         logger.info(f"INITIAL STATE: {self.current_state.name}")
 
-        # --- INIT: System startup checks ---
-        # TODO: initialize camera         → from perception.camera import Camera
-        # TODO: initialize serial link    → from communication.serial_link import SerialLink
-        # TODO: initialize PID controller → from control.pid import PIDController
-        # TODO: verify sensors connected  → TOF, IMU health checks
-        # When each module is ready, initialize it here and gate
-        # the transition to WAIT_FOR_START on all checks passing.
-        # For now, we assume all systems nominal and proceed immediately.
+        # The camera and serial link are constructed by Runtime BEFORE this
+        # StateMachine is built (see runtime.py), so by the time we get here
+        # their readiness is already known - we gate/report on it here rather
+        # than re-initializing anything. Only the camera (needed the instant
+        # START_BUTTON_PRESSED fires - must be ready for the whole of
+        # WAIT_FOR_START) and the serial link (needed to move at all) are
+        # hard requirements to leave INIT.
+        if not camera_ready:
+            logger.warning("INIT: camera NOT ready. Staying in INIT.")
+        if not serial_ready:
+            logger.warning("INIT: serial link NOT ready. Staying in INIT.")
 
-        self.current_state = State.WAIT_FOR_START
-        logger.info("TRANSITION: INIT -> WAIT_FOR_START")
+        if camera_ready and serial_ready:
+            self.current_state = State.WAIT_FOR_START
+            logger.info("TRANSITION: INIT -> WAIT_FOR_START (camera armed, serial link up)")
+        else:
+            logger.error("INIT: startup checks failed, remaining in INIT until resolved.")
 
     def handle_event(self, event):
         logger.info(f"EVENT RECEIVED: {event.type.name}")
@@ -66,16 +72,22 @@ class StateMachine:
 
         logger.info(f"CURRENT STATE: {self.current_state.name}")
 
-    def reset(self):
-        """Manual reset from ERROR back to INIT. Requires human intervention."""
+    def reset(self, camera_ready: bool = True, serial_ready: bool = True):
+        """Manual reset from ERROR back to INIT. Requires human intervention.
+
+        camera_ready/serial_ready let the caller pass in current hardware
+        status (a camera that died mid-run shouldn't silently be assumed
+        fine again just because a human hit reset)."""
         if self.current_state == State.ERROR:
             logger.warning("Manual reset triggered. Returning to INIT.")
             self.context.reset()
             self.current_state = State.INIT
             logger.info("TRANSITION: ERROR -> INIT")
-            # Re-run INIT checks when implemented
-            self.current_state = State.WAIT_FOR_START
-            logger.info("TRANSITION: INIT -> WAIT_FOR_START")
+            if camera_ready and serial_ready:
+                self.current_state = State.WAIT_FOR_START
+                logger.info("TRANSITION: INIT -> WAIT_FOR_START")
+            else:
+                logger.error("INIT: startup checks still failing, remaining in INIT.")
         else:
             logger.warning(
                 f"Reset ignored: not in ERROR state "

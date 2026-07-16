@@ -15,6 +15,8 @@
 //                EMG,<mode>
 //                PING
 //                ACK,<tag>
+//                EVT,<name>  (local test hook; only START_BUTTON_PRESSED is
+//                             supported, and it re-emits the real EVT line)
 //
 // ESP32 -> Pi:   STATUS,<message>
 //                TEL,<ax>,<ay>,<az>,<gx>,<gy>,<gz>,<tof1_mm>,<tof2_mm>

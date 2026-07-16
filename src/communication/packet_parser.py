@@ -109,6 +109,15 @@ def parse_incoming(line: str):
         logger.debug("[MCU][PING]")
         return {"type": "ping", "raw": text}
 
+    if tag == "EVT":
+        # EVT,<name> is a hardware-driven state-machine event, e.g. the
+        # physical start button. runtime.py decides whether/when to actually
+        # inject it into the state machine (only while WAIT_FOR_START, etc.);
+        # this layer just decodes the wire format.
+        name = parts[1].strip().upper() if len(parts) > 1 else ""
+        logger.info(f"[MCU][EVT] {name or '(missing name)'}")
+        return {"type": "event", "raw": text, "name": name}
+
     # Legacy boot line from the old test firmware, kept so you don't lose
     # visibility during the transition to the new firmware below.
     if text.startswith("System initialized"):

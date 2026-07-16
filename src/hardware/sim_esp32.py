@@ -4,25 +4,25 @@ Virtual ESP32 — a software stand-in for the real microcontroller + hardware.
 The real robot's motors, servo, IMU and ToF sensors all live on the ESP32 and
 are reached from the Pi over the serial link. When that hardware isn't working
 (or isn't attached), this class plays the ESP32's role: it speaks the exact
-same line protocol (CMD/EMG/PING/ACK in, STATUS/TEL/ACK out), so nothing above
-the serial layer can tell the difference. The control loop, logging and
-dashboard all behave as if a fully working robot were connected.
+same line protocol (CMD/EMG/PING/ACK in, STATUS/TEL/ACK out), plus the local
+`EVT,START_BUTTON_PRESSED` test hook, so nothing above the serial layer can
+tell the difference. The control loop, logging and dashboard all behave as if
+a fully working robot were connected.
 
 It also runs a deliberately simple motion model so the telemetry it returns is
 *plausible and reactive* rather than static:
 
-    * A forward/backward command produces forward acceleration; the IMU's ax
-      reflects it and az sits at ~1 g (gravity), like a real accelerometer.
-    * A steering command produces a yaw rate on gz and rotates the heading.
-    * Two ToF sensors (left, right) report distance to virtual side walls in a
-      ~1 m wide corridor; steering changes those distances the way walls would
-      appear to approach as the car angles toward them.
+        * A forward/backward command produces forward acceleration; the IMU's ax
+            reflects it and az sits at ~1 g (gravity), like a real accelerometer.
+        * A steering command produces a yaw rate on gz and rotates the heading.
+        * Two ToF sensors (left, right) report distance to virtual side walls in a
+            ~1 m wide corridor; steering changes those distances the way walls would
+            appear to approach as the car angles toward them.
 
 This is not a physics engine — it is just enough dynamics that the numbers move
 sensibly when you drive, which is what makes the dashboard and scenario runs
 worth watching.
 """
-
 from __future__ import annotations
 
 import math
@@ -88,6 +88,12 @@ class SimulatedESP32:
             self._action = "STOP"
             self._emergency = True
             self._outbox.append("STATUS,EMG ack")
+        elif tag == "EVT" and len(parts) == 2:
+            name = parts[1].strip().upper()
+            if name == "START_BUTTON_PRESSED":
+                self._outbox.append("EVT,START_BUTTON_PRESSED")
+            else:
+                self._outbox.append(f"STATUS,ERR unsupported EVT: {name}")
         elif tag == "PING":
             self._outbox.append("ACK,PING")
         elif tag == "ACK":

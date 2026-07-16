@@ -1,10 +1,14 @@
 """
 Time-of-Flight (ToF) distance sensor interface.
 
-Two ToF sensors (left and right) sit on the ESP32 and report inside the TEL
-telemetry packet as tof1_mm / tof2_mm. This class exposes them as named
-left/right distances for the wall-following logic, reading from the same
-TelemetryHub as everything else so real and simulated data are interchangeable.
+OWNERSHIP: both ToF sensors are physical hardware wired to the ESP32, not the
+Pi. As with hardware/imu.py, the Pi does no I2C/GPIO of its own here -- it
+only reads the tof1_mm/tof2_mm fields out of the latest TEL packet the ESP32
+published to the TelemetryHub (see communication/packet_parser.py). There is
+no Pi-side computation on this data at all (unlike the IMU's heading
+integration) -- it's a pure pass-through, named left/right for readability.
+If a ToF driver ever needs writing, it belongs in firmware/esp_controller/,
+next to imu.cpp, not here.
 """
 
 from __future__ import annotations

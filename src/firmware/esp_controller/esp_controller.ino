@@ -1,53 +1,9 @@
-// // I2C Configuration
-// #define IMU_I2C_ADDRESS 0x6A
-// #define TOF_I2C_ADDRESS 0x7E
-// #define I2C_SDA_PIN 21
-// #define I2C_SCL_PIN 22
-
-// #define IMU_SAMPLE_RATE_HZ 104
-// #define TOF_TIMING_BUDGET_MS 20
-
-// // Motor pins
-// #define PIN_MOTOR_IN1 18
-// #define PIN_MOTOR_IN2 19
-// #define PIN_MOTOR_PWM 23  
-
-
-// // Steering servo
-// #define PIN_STEERING_SERVO 12
-
-// // Start button
-// #define PIN_START_BUTTON 2
-
-// // LED (status indicator)
-// #define PIN_LED 25
-
-
-// void setup()
-// {
-//     initSerial();
-//     initMotor();
-//     initServo();
-//     initIMU();
-// }
-
-// void loop()
-// {
-//     processSerial();
-
-//     readIMU();
-
-//     updateMotor();
-
-//     updateServo();
-
-//     sendTelemetry();
-// }
-
 #include "serial_protocol.h"
 #include "config.h"
 #include "motor.h"
 #include "servo_control.h"
+#include "imu.h"
+#include "start_button.h"
 
 namespace
 {
@@ -79,6 +35,10 @@ namespace
         }
 
         setMotorSpeed(motorSpeed);
+        // NOTE: this is the ONE place a steer value crosses from the wire
+        // protocol into the physical servo. Whatever the Pi sent -- whether
+        // that's raw manual input or the output of the IMU heading-hold PID
+        // (control/steering_control.py) -- lands here identically.
         setSteeringAngle(map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT));
     }
 }
@@ -87,12 +47,17 @@ void setup() {
     initSerial();
     initMotor();
     initServo();
+    initStartButton();
+    initIMU(); // failure is non-fatal: readIMU() falls back to level/stationary
+               // defaults and the STATUS,ERR line already told the Pi why.
+
     activeCommand.valid = true;
     applyCommand(activeCommand);
 }
 
 void loop() {
     processSerial();
+    updateStartButton();
 
     if (commandAvailable()) {
         activeCommand = getLatestCommand();
@@ -111,5 +76,7 @@ void loop() {
     updateServo();
 
     RobotTelemetry telemetry;
+    readIMU(telemetry); // fills ax..gz; tof1_mm/tof2_mm remain 0.0 until a
+                         // ToF driver is wired up (out of scope here)
     sendTelemetry(telemetry);
 }
