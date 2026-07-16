@@ -7,8 +7,8 @@ namespace
 {
     constexpr int SERVO_PWM_FREQUENCY = 50;
     constexpr int SERVO_PWM_RESOLUTION = 16;
-    constexpr int SERVO_MIN_PULSE_US = 500;
-    constexpr int SERVO_MAX_PULSE_US = 2500;
+    constexpr int SERVO_MIN_PULSE_US = 1000;
+    constexpr int SERVO_MAX_PULSE_US = 2000;
 
     int currentSteeringAngle = SERVO_CENTER;
 

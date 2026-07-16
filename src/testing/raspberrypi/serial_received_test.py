@@ -1,6 +1,6 @@
 import serial
 
-PORT = "/dev/ttyUSB0"
+PORT = "/dev/ttyAMA0"
 BAUD = 115200
 
 ser = serial.Serial(PORT, BAUD, timeout=1)

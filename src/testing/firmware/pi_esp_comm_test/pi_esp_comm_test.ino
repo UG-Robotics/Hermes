@@ -1,239 +1,264 @@
-#include <Arduino.h>
-#include <ESP32Servo.h>
+#define LED 2
 
-// Quick ESP32 test sketch for Pi <-> ESP motor/steering link validation.
-// Packet format matches src/communication/protocol.py and
-// src/firmware/esp_controller/serial_protocol.cpp.
+String incoming = "";
 
-const int PIN_MOTOR_IN1 = 18;
-const int PIN_MOTOR_IN2 = 19;
-const int PIN_MOTOR_PWM = 23;
-const int PIN_STEERING_SERVO = 14;
+void setup() {
+  pinMode(LED, OUTPUT);
 
-const int SERVO_CENTER = 90;
-const int SERVO_LEFT = 45;
-const int SERVO_RIGHT = 135;
+  // Hardware UART0
+  Serial.begin(115200);
 
-const int BAUD_RATE = 115200;
-const int MOTOR_PWM_FREQ = 1000;
-const int MOTOR_PWM_RESOLUTION = 8;
-const int MAX_DUTY = (1 << MOTOR_PWM_RESOLUTION) - 1;
+  delay(1000);
 
-const int SPEED_MIN = 0;
-const int SPEED_MAX = 255;
-const int STEER_MIN = 0;
-const int STEER_MAX = 180;
-
-Servo steering;
-String lineBuffer;
-unsigned long lastHeartbeatMs = 0;
-
-void stopMotor()
-{
-  digitalWrite(PIN_MOTOR_IN1, LOW);
-  digitalWrite(PIN_MOTOR_IN2, LOW);
-  ledcWrite(PIN_MOTOR_PWM, 0);
+  Serial.println("ESP_READY");
 }
 
-void driveForward(int speed)
-{
-  digitalWrite(PIN_MOTOR_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_IN2, LOW);
-  ledcWrite(PIN_MOTOR_PWM, constrain(speed, SPEED_MIN, SPEED_MAX));
-}
 
-void driveBackward(int speed)
-{
-  digitalWrite(PIN_MOTOR_IN1, LOW);
-  digitalWrite(PIN_MOTOR_IN2, HIGH);
-  ledcWrite(PIN_MOTOR_PWM, constrain(speed, SPEED_MIN, SPEED_MAX));
-}
+void loop() {
 
-void setSteering(int steer)
-{
-  steering.write(constrain(steer, STEER_MIN, STEER_MAX));
-}
+  while (Serial.available()) {
+    char c = Serial.read();
 
-void sendStatus(const String &message)
-{
-  Serial.print("STATUS,");
-  Serial.println(message);
-}
+    if (c == '\n') {
 
-void sendAck(const String &tag)
-{
-  if (tag.length() > 0)
-  {
-    Serial.print("ACK,");
-    Serial.println(tag);
-  }
-  else
-  {
-    Serial.println("ACK");
-  }
-}
+      incoming.trim();
 
-void sendPing()
-{
-  Serial.println("PING");
-}
+      if (incoming == "PING") {
 
-int parseIntField(const String &value, int fallback)
-{
-  String trimmed = value;
-  trimmed.trim();
-  if (trimmed.length() == 0)
-  {
-    return fallback;
-  }
-  return trimmed.toInt();
-}
+        Serial.println("PONG");
 
-void handleCommandLine(const String &line)
-{
-  String text = line;
-  text.trim();
-  if (text.length() == 0)
-  {
-    return;
-  }
+      } 
+      else if (incoming.startsWith("CMD")) {
 
-  String fields[5];
-  int count = 0;
-  int start = 0;
-  while (count < 5)
-  {
-    int comma = text.indexOf(',', start);
-    if (comma < 0)
-    {
-      fields[count++] = text.substring(start);
-      break;
-    }
-    fields[count++] = text.substring(start, comma);
-    start = comma + 1;
-  }
+        digitalWrite(LED, !digitalRead(LED));
 
-  String tag = fields[0];
-  tag.trim();
-  tag.toUpperCase();
+        Serial.print("ACK,");
+        Serial.println(incoming);
 
-  if (tag == "CMD")
-  {
-    if (count != 5)
-    {
-      sendStatus("ERR malformed CMD");
-      return;
-    }
-
-    int speed = constrain(parseIntField(fields[1], 0), SPEED_MIN, SPEED_MAX);
-    int steer = constrain(parseIntField(fields[2], SERVO_CENTER), STEER_MIN, STEER_MAX);
-    String action = fields[3];
-    action.trim();
-    action.toUpperCase();
-
-    int mode = parseIntField(fields[4], 1);
-
-    setSteering(steer);
-
-    if (action == "FORWARD")
-    {
-      driveForward(speed);
-    }
-    else if (action == "BACKWARD")
-    {
-      driveBackward(speed);
-    }
-    else
-    {
-      stopMotor();
-      action = "STOP";
-    }
-
-    Serial.print("STATUS,CMD OK,");
-    Serial.print(speed);
-    Serial.print(',');
-    Serial.print(steer);
-    Serial.print(',');
-    Serial.print(action);
-    Serial.print(',');
-    Serial.println(mode);
-
-    sendAck("CMD");
-    return;
-  }
-
-  if (tag == "EMG")
-  {
-    stopMotor();
-    setSteering(SERVO_CENTER);
-    sendStatus("EMG STOP");
-    sendAck("EMG");
-    return;
-  }
-
-  if (tag == "PING")
-  {
-    sendAck("PING");
-    return;
-  }
-
-  if (tag == "ACK")
-  {
-    return;
-  }
-
-  sendStatus("ERR unknown packet: " + text);
-}
-
-void setup()
-{
-  Serial.begin(BAUD_RATE);
-  while (!Serial)
-  {
-    delay(10);
-  }
-
-  pinMode(PIN_MOTOR_IN1, OUTPUT);
-  pinMode(PIN_MOTOR_IN2, OUTPUT);
-  digitalWrite(PIN_MOTOR_IN1, LOW);
-  digitalWrite(PIN_MOTOR_IN2, LOW);
-
-  ledcAttach(PIN_MOTOR_PWM, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION);
-  ledcWrite(PIN_MOTOR_PWM, 0);
-
-  steering.attach(PIN_STEERING_SERVO, 500, 2400);
-  setSteering(SERVO_CENTER);
-
-  stopMotor();
-  sendStatus("ESP_PI_TEST_READY");
-  sendPing();
-}
-
-void loop()
-{
-  while (Serial.available() > 0)
-  {
-    char c = static_cast<char>(Serial.read());
-    if (c == '\n')
-    {
-      handleCommandLine(lineBuffer);
-      lineBuffer = "";
-    }
-    else if (c != '\r')
-    {
-      lineBuffer += c;
-      if (lineBuffer.length() > 128)
-      {
-        lineBuffer = "";
-        sendStatus("ERR line overflow");
       }
+      else {
+
+        Serial.print("ERR,UNKNOWN,");
+        Serial.println(incoming);
+
+      }
+
+      incoming = "";
+
+    } 
+    else {
+      incoming += c;
     }
   }
 
-  unsigned long now = millis();
-  if (now - lastHeartbeatMs >= 2000)
-  {
-    lastHeartbeatMs = now;
-    sendStatus("LINK_ALIVE");
+
+  // optional heartbeat
+  static unsigned long last = 0;
+
+  if (millis() - last > 5000) {
+    Serial.println("ESP_ALIVE");
+    last = millis();
   }
 }
+
+
+
+//haqq 1 - pi to ESP
+
+// #define RXD2 15
+// #define TXD2 23
+
+// void setup() {
+//   Serial.begin(115200);                          
+//   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);   
+//   Serial.println("ESP32 listener ready");
+// }
+
+// void loop() {
+//   if (Serial2.available()) {
+//     String line = Serial2.readStringUntil('\n');
+//     line.trim();
+//     Serial.println("RX: " + line);
+//   }
+// }
+
+
+//haqq 2 - ESP to pi
+
+// #define RXD2 15
+// #define TXD2 14
+
+// void setup() {
+//   Serial.begin(115200);                           // USB debug
+//   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);   // to Pi
+//   Serial.println("ESP32 sender ready");
+// }
+
+// int counter = 0;
+
+// void loop() {
+//   String msg = "Hello from ESP32 #" + String(counter++);
+//   Serial2.println(msg);
+//   Serial.println("Sent: " + msg);  // mirror to USB for debugging
+//   delay(1000);
+// }
+
+// // #define LED 2
+
+// String incoming = "";
+
+// void setup() {
+//   pinMode(LED, OUTPUT);
+
+//   // Hardware UART0
+//   Serial.begin(115200);
+
+//   delay(1000);
+
+//   Serial.println("ESP_READY");
+// }
+
+
+// void loop() {
+
+//   while (Serial.available()) {
+//     char c = Serial.read();
+
+//     if (c == '\n') {
+
+//       incoming.trim();
+
+//       if (incoming == "PING") {
+
+//         Serial.println("PONG");
+
+//       } 
+//       else if (incoming.startsWith("CMD")) {
+
+//         digitalWrite(LED, !digitalRead(LED));
+
+//         Serial.print("ACK,");
+//         Serial.println(incoming);
+
+//       }
+//       else {
+
+//         Serial.print("ERR,UNKNOWN,");
+//         Serial.println(incoming);
+
+//       }
+
+//       incoming = "";
+
+//     } 
+//     else {
+//       incoming += c;
+//     }
+//   }
+
+
+//   // optional heartbeat
+//   static unsigned long last = 0;
+
+//   if (millis() - last > 5000) {
+//     Serial.println("ESP_ALIVE");
+//     last = millis();
+//   }
+// }
+
+
+
+// //haqq 1 - pi to ESP
+
+// // #define RXD2 15
+// // #define TXD2 23
+
+// // void setup() {
+// //   Serial.begin(115200);                          
+// //   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);   
+// //   Serial.println("ESP32 listener ready");
+// // }
+
+// // void loop() {
+// //   if (Serial2.available()) {
+// //     String line = Serial2.readStringUntil('\n');
+// //     line.trim();
+// //     Serial.println("RX: " + line);
+// //   }
+// // }
+
+
+// //haqq 2 - ESP to pi
+
+// // #define RXD2 15
+// // #define TXD2 14
+
+// // void setup() {
+// //   Serial.begin(115200);                           // USB debug
+// //   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);   // to Pi
+// //   Serial.println("ESP32 sender ready");
+// // }
+
+// // int counter = 0;
+
+// // void loop() {
+// //   String msg = "Hello from ESP32 #" + String(counter++);
+// //   Serial2.println(msg);
+// //   Serial.println("Sent: " + msg);  // mirror to USB for debugging
+// //   delay(1000);
+// // }
+
+// #define RXD2 16
+// #define TXD2 17
+
+// HardwareSerial TestSerial(2);
+
+// String received = "";
+
+// void setup() {
+//   Serial.begin(115200);   // USB serial monitor
+
+//   TestSerial.begin(
+//     115200,
+//     SERIAL_8N1,
+//     RXD2,
+//     TXD2
+//   );
+
+//   delay(1000);
+
+//   Serial.println("ESP32 UART2 Loopback Test");
+//   Serial.println("Connect GPIO17 TX2 -> GPIO16 RX2");
+// }
+
+// void loop() {
+
+//   // Send test message every second
+//   static unsigned long lastSend = 0;
+
+//   if (millis() - lastSend > 1000) {
+//     lastSend = millis();
+
+//     String msg = "Hello UART " + String(millis());
+
+//     TestSerial.println(msg);
+
+//     Serial.print("Sent: ");
+//     Serial.println(msg);
+//   }
+
+
+//   // Read anything coming back through RX
+//   while (TestSerial.available()) {
+//     char c = TestSerial.read();
+
+//     if (c == '\n') {
+//       Serial.print("Received: ");
+//       Serial.println(received);
+//       received = "";
+//     }
+//     else {
+//       received += c;
+//     }
+//   }
+// }
