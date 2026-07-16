@@ -1,0 +1,29 @@
+# Models
+
+This folder contains CAD assets for the robot. The table below is intentionally incomplete and can be expanded later.
+
+| model_picture | file | description |
+| --- | --- | --- |
+| <img src="battery_holder.png" alt="battery holder" width="180" /> | [battery_holder.STEP](battery_holder.STEP) | Battery holder part. |
+| <img src="bevel_gears.png" alt="bevel gears" width="180" /> | [bevel gear.STEP](bevel%20gear.STEP) | Bevel gear for the drivetrain. |
+| <img src="camera_holder_assembly.png" alt="camera holder assembly" width="180" /> | TBD | Camera holder assembly preview. |
+| <img src="camera_plate.png" alt="camera plate" width="180" /> | TBD | Camera plate preview. |
+| <img src="cam_clip.png" alt="camera clip" width="180" /> | TBD | Camera clip preview. |
+| <img src="cam_linkage.png" alt="camera linkage" width="180" /> | [linkage.STEP](linkage.STEP) | Camera linkage preview. |
+| <img src="differential_gearbox_assembly.png" alt="differential gearbox assembly" width="180" /> | [nDifferential_gearbox.STL](nDifferential_gearbox.STL) | Differential gearbox assembly. |
+| <img src="first_spur_gear.png" alt="first spur gear" width="180" /> | [first_spur.STEP](first_spur.STEP) | First spur gear. |
+| <img src="forward_clip.png" alt="forward clip" width="180" /> | TBD | Forward clip preview. |
+| <img src="linkage.png" alt="linkage" width="180" /> | [linkage.STEP](linkage.STEP) | Main linkage part. |
+| <img src="main_base.png" alt="main base" width="180" /> | [main_base.STEP](main_base.STEP) | Main base structure. |
+| <img src="pins.png" alt="pins" width="180" /> | [pin.STL](pin.STL) | Pin set preview. |
+| <img src="power_layer.png" alt="power layer" width="180" /> | [power_layer.STEP](power_layer.STEP) | Power layer assembly. |
+| <img src="second_spur_gear.png" alt="second spur gear" width="180" /> | [second_spur_gear.STEP](second_spur_gear.STEP) | Second spur gear. |
+| <img src="sensor_box.png" alt="sensor box" width="180" /> | TBD | Sensor box preview. |
+| <img src="sensor_box_holder.png" alt="sensor box holder" width="180" /> | TBD | Sensor box holder preview. |
+| <img src="servo_linkage.png" alt="servo linkage" width="180" /> | [servo_linkage.STEP](servo_linkage.STEP) | Servo linkage part. |
+| <img src="top_plate.png" alt="top plate" width="180" /> | TBD | Top plate preview. |
+
+## Notes
+
+- More models can be added here as the CAD library is finalized.
+- Replace the TBD entries with matching preview images when available.

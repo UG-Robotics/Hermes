@@ -42,7 +42,7 @@ This documentation was last updated on **Thursday, July 16, 2026**.
 
 PDF datasheets for each component will be uploaded here.
 
-Suggested file names:
+file names:
 
 - `raspberry_pi_4_datasheet.pdf`
 - `esp32_datasheet.pdf`
