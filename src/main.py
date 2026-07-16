@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--port", type=int, default=5000, help="dashboard port")
     parser.add_argument("--scenario", default="full_match", help="scenario name (scenario mode)")
     parser.add_argument("--no-keyboard", action="store_true", help="disable keyboard listener")
+    parser.add_argument("--auto-start", action="store_true", help="inject START_BUTTON_PRESSED automatically once ready")
     args = parser.parse_args()
 
     # Resolve whether hardware is simulated. Explicit flags win; then the mode's
@@ -77,12 +78,14 @@ def main():
     elif args.mode == "dashboard":
         from runtime import Runtime
         from monitoring.dashboard import run_dashboard
-        runtime = Runtime(simulated=simulated, use_keyboard=not args.no_keyboard, use_camera=True)
+        runtime = Runtime(simulated=simulated, use_keyboard=not args.no_keyboard, use_camera=True,
+                          auto_start=args.auto_start)
         run_dashboard(runtime, host=args.host, port=args.port)
 
     else:  # run / sim
         from runtime import Runtime
-        runtime = Runtime(simulated=simulated, use_keyboard=not args.no_keyboard, use_camera=True)
+        runtime = Runtime(simulated=simulated, use_keyboard=not args.no_keyboard, use_camera=True,
+                          auto_start=args.auto_start)
         runtime.run_forever()
 
 

@@ -141,16 +141,20 @@ class SerialLink:
             self.emulation = True
             return False
 
-        try:
-            self.ser = serial.Serial(self.port, self.baud_rate, timeout=self.timeout)
-            self.emulation = False
-            logger.info(f"Connected to ESP32 on {self.port}")
-            return True
-        except Exception as e:
-            logger.warning(f"Running in EMULATION mode. Serial port unavailable: {e}")
-            self.ser = None
-            self.emulation = True
-            return False
+        for port_name in self._candidate_ports():
+            try:
+                self.ser = serial.Serial(port_name, self.baud_rate, timeout=self.timeout)
+                self.port = port_name
+                self.emulation = False
+                logger.info(f"Connected to ESP32 on {self.port}")
+                return True
+            except Exception as e:
+                last_error = e
+
+        logger.warning(f"Running in EMULATION mode. Serial port unavailable: {last_error}")
+        self.ser = None
+        self.emulation = True
+        return False
 
     @property
     def is_open(self) -> bool:
@@ -222,6 +226,33 @@ class SerialLink:
         if self.is_open:
             return "real"
         return "emu"
+
+    def _candidate_ports(self):
+        candidates = []
+
+        def add(port_name):
+            if port_name and port_name not in candidates:
+                candidates.append(port_name)
+
+        add(self.port)
+
+        try:
+            from config.robot_config import SERIAL_PORT_FALLBACKS
+            for fallback in SERIAL_PORT_FALLBACKS:
+                add(fallback)
+        except Exception:
+            pass
+
+        try:
+            from serial.tools import list_ports
+            for port_info in list_ports.comports():
+                device = getattr(port_info, "device", None)
+                if device:
+                    add(device)
+        except Exception:
+            pass
+
+        return candidates
 
     def close(self) -> None:
         if self.is_open:

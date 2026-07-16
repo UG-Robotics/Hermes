@@ -14,8 +14,11 @@ import os
 SIMULATION = os.environ.get("HERMES_SIM", "0").lower() in ("1", "true", "yes", "on")
 
 # Serial Communication Settings
-SERIAL_PORT = "/dev/ttyUSB0"
-# SERIAL_PORT = "/dev/ttyACM0"
+# /dev/serial0 is the Raspberry Pi's stable alias for the UART header; the
+# runtime also falls back to common USB/ACM device names if that alias is not
+# the active one on the current setup.
+SERIAL_PORT = "/dev/serial0"
+SERIAL_PORT_FALLBACKS = ["/dev/ttyUSB0", "/dev/ttyACM0", "/dev/ttyAMA0", "/dev/ttyS0"]
 BAUD_RATE = 115200
 SERIAL_TIMEOUT = 0.1  # seconds
 

@@ -9,12 +9,16 @@ Keys (hold to act, release to stop):
     space - immediate stop / straighten wheels
     m  - toggle MANUAL <-> AUTONOMOUS
 
-The listener runs in a background thread using pynput so it never blocks the
-20 Hz control loop. If pynput is unavailable (e.g. headless Pi with no X, or a
-permissions issue) it degrades to a no-op with manual mode permanently off,
-instead of crashing — the dashboard can still drive manually over HTTP.
+The listener runs in a background thread using pynput when available, or a
+raw terminal keyboard reader when that is the more reliable option on a Pi.
+If both are unavailable (e.g. no TTY and no X/Wayland input backend), it
+degrades to a no-op with manual mode permanently off, instead of crashing —
+the dashboard can still drive manually over HTTP.
 """
 
+import os
+import sys
+import time
 import threading
 
 from utils.logger import get_logger
@@ -52,10 +56,16 @@ class KeyboardOverrideListener:
         self._manual_mode_active = False
         self._pressed_keys = set()
         self._listener = None
+        self._stdin_thread = None
+        self._stdin_stop = threading.Event()
+        self._stdin_restore = None
         # Remote (dashboard) manual override, merged with keyboard state.
         self._remote_target = None
 
     def start(self):
+        if self._start_stdin_listener():
+            logger.info("Keyboard override listener active (terminal input: w/s/a/d, space, m).")
+            return
         if not PYNPUT_AVAILABLE:
             logger.warning("Keyboard override listener skipped (pynput unavailable).")
             return
@@ -69,6 +79,14 @@ class KeyboardOverrideListener:
             self._listener = None
 
     def stop(self):
+        self._stdin_stop.set()
+        if self._stdin_thread and self._stdin_thread.is_alive():
+            self._stdin_thread.join(timeout=0.5)
+        if self._stdin_restore is not None:
+            try:
+                self._stdin_restore()
+            except Exception:
+                pass
         if self._listener:
             self._listener.stop()
 
@@ -108,6 +126,78 @@ class KeyboardOverrideListener:
             return KEY_STOP
         char = getattr(key, "char", None)
         return char.lower() if char else None
+
+    def _start_stdin_listener(self):
+        if os.environ.get("HERMES_KEYBOARD_MODE", "auto").lower() == "pynput":
+            return False
+        if not sys.stdin.isatty():
+            return False
+        if os.name == "nt":
+            try:
+                import msvcrt
+            except Exception:
+                return False
+
+            def worker():
+                while not self._stdin_stop.is_set():
+                    if msvcrt.kbhit():
+                        char = msvcrt.getwch()
+                        self._handle_stdin_char(char)
+                    else:
+                        time.sleep(0.02)
+
+            self._stdin_thread = threading.Thread(target=worker, daemon=True)
+            self._stdin_thread.start()
+            return True
+
+        try:
+            import select
+            import termios
+            import tty
+        except Exception:
+            return False
+
+        fd = sys.stdin.fileno()
+        try:
+            original = termios.tcgetattr(fd)
+        except Exception:
+            return False
+
+        def restore():
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, original)
+            except Exception:
+                pass
+
+        def worker():
+            try:
+                tty.setraw(fd)
+                while not self._stdin_stop.is_set():
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    if ready:
+                        char = sys.stdin.read(1)
+                        if char:
+                            self._handle_stdin_char(char)
+            finally:
+                restore()
+
+        self._stdin_restore = restore
+        self._stdin_thread = threading.Thread(target=worker, daemon=True)
+        self._stdin_thread.start()
+        return True
+
+    def _handle_stdin_char(self, char):
+        if not char:
+            return
+        mapped = " " if char in (" ", "\r", "\n") else char.lower()
+        if mapped == KEY_STOP:
+            logger.info("[MANUAL] STOP (terminal)")
+            self._pressed_keys.clear()
+            return
+        if mapped in (KEY_TOGGLE_MANUAL, KEY_FORWARD, KEY_BACKWARD, KEY_LEFT, KEY_RIGHT):
+            class _Key:
+                char = mapped
+            self._on_press(_Key())
 
     # ---------------------------------------------------------- remote override
     def set_remote_manual(self, active):

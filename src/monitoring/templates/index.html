@@ -469,8 +469,9 @@ function cancelScn(){ post('/api/scenarios',{action:'cancel'}); }
 // browser keyboard driving
 const KEYMAP={w:['FORWARD',0],s:['BACKWARD',0],a:['FORWARD',-45],d:['FORWARD',45]};
 addEventListener('keydown',e=>{ if(e.repeat)return; const k=e.key.toLowerCase();
-  if(KEYMAP[k]) drive(KEYMAP[k][0],KEYMAP[k][1]); else if(e.key===' ') drive('STOP',0); });
-addEventListener('keyup',e=>{ if('wsad '.includes(e.key.toLowerCase())) release(); });
+  if(KEYMAP[k]){ e.preventDefault(); drive(KEYMAP[k][0],KEYMAP[k][1]); }
+  else if(e.key===' '){ e.preventDefault(); drive('STOP',0); } });
+addEventListener('keyup',e=>{ if('wsad '.includes(e.key.toLowerCase())){ e.preventDefault(); release(); } });
 
 buildFSM(); buildMeters(); loadScn(); connect(); requestAnimationFrame(drawHUD);
 </script>

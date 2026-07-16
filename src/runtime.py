@@ -64,8 +64,10 @@ _HEADING_HOLD_ACTIONS = ("FORWARD", "BACKWARD")
 
 class Runtime:
     def __init__(self, simulated: bool = False, use_keyboard: bool = True,
-                 use_camera: bool = True, loop_hz: float = 20.0):
+                 use_camera: bool = True, loop_hz: float = 20.0,
+                 auto_start: bool = False):
         self.simulated = simulated
+        self.auto_start = auto_start
         self.loop_interval = 1.0 / loop_hz
         self._hub = get_hub()
 
@@ -121,6 +123,7 @@ class Runtime:
         # for real: a run with no camera or no ESP32 link now honestly stays
         # in INIT instead of pretending it's ready to race.
         self.state_machine = StateMachine(camera_ready=camera_ready, serial_ready=self.serial_ok)
+        self._auto_start_fired = False
 
         # --- pillar avoidance + IMU heading-hold control -------------------
         self.pillar_detector = PillarDetector()
@@ -268,6 +271,15 @@ class Runtime:
                 if obs.distance_mm is not None:
                     ctx.pillar_distance_mm = obs.distance_mm
 
+    def _maybe_auto_start(self) -> None:
+        if self._auto_start_fired or not self.auto_start:
+            return
+        if self.state_machine.current_state != State.WAIT_FOR_START:
+            return
+        self._auto_start_fired = True
+        logger.info("Auto-start enabled: injecting START_BUTTON_PRESSED.")
+        self.inject_event("START_BUTTON_PRESSED", source="auto-start")
+
     # ================================================================ hardware events
     def _handle_hardware_event(self, name: str) -> None:
         """An EVT,<name> packet arrived from the ESP32 (e.g. the physical
@@ -352,6 +364,9 @@ class Runtime:
 
         # 2) PERCEIVE: look for pillars and raise events off real vision.
         self._update_vision()
+
+        # Optional no-button bring-up for bench and integration testing.
+        self._maybe_auto_start()
 
         # 3) STATE MACHINE: apply any events queued this tick (from vision,
         #    keyboard/dashboard injection, a scenario, or the ESP32 button).
