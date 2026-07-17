@@ -1,1 +1,0 @@
-Simulation video [here](https://drive.google.com/file/d/1UEuq1lsJVbTyKFQoMr3DLRa_I0C0G2ix/view?usp=sharing)
