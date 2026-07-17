@@ -22,8 +22,8 @@ This folder contains CAD assets for the robot. The table below is intentionally 
 | <img src="sensor_box_holder.png" alt="sensor box holder" width="180" /> | [sensor box holder](sensor_box_holder.SLDPRT) | Sensor box holder preview. |
 | <img src="servo_linkage.png" alt="servo linkage" width="180" /> | [servo_linkage.STEP](servo_linkage.STEP) | Servo linkage part. |
 | <img src="top_plate.png" alt="top plate" width="180" /> | [Top Layer](top_layer.STEP) | Top plate preview. |
-
+| <img src="Rods.png" alt="top plate" width="180" /> | [Rod](rod_actual.SLDPRT) | Top plate preview. |
 ## Notes
 
 - More models can be added here as the CAD library is finalized.
-- Replace the TBD entries with matching preview images when available.
+
