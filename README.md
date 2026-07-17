@@ -1,6 +1,6 @@
-# 🚀 WRO 2025 Future Engineers – ANTi
+<!--# 🚀 WRO 2026 Future Engineers – HERMES
 
-<center>
+ <center>
 <img src="other/transparent_only_logo_WRO2025_FE_ANTi_logo_05-05-2025.png" alt="Banner" width="600">
 
 [![Instagram](https://img.shields.io/badge/Instagram-%23E4405F.svg?style=for-the-badge&logo=Instagram&logoColor=white)](https://www.instagram.com/anti.wro/)
@@ -8,10 +8,7 @@
 </center>
 
 ---
-
-## 🏆 **TURKISH NATIONAL CHAMPION – READY FOR SINGAPORE FINALS**
-
-Welcome to the GitHub repository of **Team ANTi**, competing in the **World Robot Olympiad™ (WRO®) Future Engineers 2025** category. Our team is made up of Turkish students who have designed a compact, innovative, and autonomous self-driving vehicle to tackle the dynamic challenges of the WRO 2025 competition. Our team name, **ANTi**, reflects our philosophy: like an **ANT**, our robot is exceptionally small yet highly capable, pushing the boundaries of minimalism in design. The "**ANT**i" signifies our competitive spirit, standing "versus the world" in pursuit of engineering excellence.
+Welcome to the GitHub repository of **Team HERMES**, competing in the **World Robot Olympiad™ (WRO®) Future Engineers 2025** category. Our team is made up of Turkish students who have designed a compact, innovative, and autonomous self-driving vehicle to tackle the dynamic challenges of the WRO 2025 competition. Our team name, **ANTi**, reflects our philosophy: like an **ANT**, our robot is exceptionally small yet highly capable, pushing the boundaries of minimalism in design. The "**ANT**i" signifies our competitive spirit, standing "versus the world" in pursuit of engineering excellence.
 
 Our mission was to create the smallest possible robot for the WRO 2025 challenge, leveraging our expertise in electrical, mechanical, and software engineering to test the limits of the 3 m x 3 m game field. After winning the Turkish National Final, we rebuilt, re-tuned, and re-documented every subsystem for the International Final in Singapore on 26–28 Nov 2025.
 Current best times on the 3 m x 3 m field:
@@ -936,4 +933,4 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 [![Instagram](https://img.shields.io/badge/Follow%20our%20Journey-Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://www.instagram.com/anti.wro/)
 [![YouTube](https://img.shields.io/badge/Watch%20Performance%20Videos-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/@solipsy.)
 
-</div>
+</div> -->
