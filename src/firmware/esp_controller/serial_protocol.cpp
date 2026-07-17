@@ -82,6 +82,7 @@ namespace
         latestCommand.valid = true;
         newCommandFlag = true;
         emergencyFlag = false; // a fresh normal CMD clears a prior emergency latch
+        sendStatus("CMD RX speed=" + String(latestCommand.speed) + " steer=" + String(latestCommand.steer) + " action=" + latestCommand.action + " mode=" + String(latestCommand.mode));
     }
 
     void handleEmg(String fields[], size_t n)
@@ -94,7 +95,7 @@ namespace
         latestCommand.valid = true;
         newCommandFlag = true;
         emergencyFlag = true;
-        sendStatus("EMG ack");
+        sendStatus("EMG ack mode=" + String(latestCommand.mode));
     }
 
     void handleEvent(String fields[], size_t n)
@@ -137,10 +138,12 @@ namespace
 
         if (tag == "CMD")
         {
+            sendStatus("RX CMD line");
             handleCmd(fields, n);
         }
         else if (tag == "EMG")
         {
+            sendStatus("RX EMG line");
             handleEmg(fields, n);
         }
         else if (tag == "EVT")
