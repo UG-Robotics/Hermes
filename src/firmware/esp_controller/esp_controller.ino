@@ -21,6 +21,7 @@ namespace
         {
             setMotorSpeed(0);
             setSteeringAngle(SERVO_CENTER);
+            sendStatus("APPLY STOP motor=0 steer=90");
             return;
         }
 
@@ -39,7 +40,9 @@ namespace
         // protocol into the physical servo. Whatever the Pi sent -- whether
         // that's raw manual input or the output of the IMU heading-hold PID
         // (control/steering_control.py) -- lands here identically.
-        setSteeringAngle(map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT));
+        int servoAngle = map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT);
+        setSteeringAngle(servoAngle);
+        sendStatus("APPLY CMD motor=" + String(motorSpeed) + " steer=" + String(servoAngle) + " action=" + command.action);
     }
 }
 

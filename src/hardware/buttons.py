@@ -233,7 +233,10 @@ class KeyboardOverrideListener:
     # ------------------------------------------------------------------ queries
     def is_manual_mode_active(self) -> bool:
         with self._lock:
-            return self._manual_mode_active
+            if self._remote_target is not None:
+                return True
+            has_drive_input = bool(self._pressed_keys & {KEY_FORWARD, KEY_BACKWARD, KEY_LEFT, KEY_RIGHT})
+            return self._manual_mode_active or has_drive_input
 
     def get_manual_target(self) -> tuple:
         """Resolve current keyboard (or remote) state into a drive target.

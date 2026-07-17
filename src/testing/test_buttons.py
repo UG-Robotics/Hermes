@@ -18,7 +18,7 @@ class TestKeyboardOverrideListener(unittest.TestCase):
 
         listener._on_press(_KeyStub("w"))
         listener._on_press(_KeyStub("w"))
-        self.assertTrue(listener.is_manual_mode_active() is False)
+        self.assertTrue(listener.is_manual_mode_active())
         self.assertIn("w", listener._pressed_keys)
         self.assertEqual(listener._key_counts.get("w", 0), 2)
 
@@ -27,6 +27,7 @@ class TestKeyboardOverrideListener(unittest.TestCase):
 
         listener._on_release(_KeyStub("w"))
         self.assertNotIn("w", listener._pressed_keys)
+        self.assertFalse(listener.is_manual_mode_active())
 
 
 if __name__ == "__main__":
