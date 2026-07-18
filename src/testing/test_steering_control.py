@@ -44,6 +44,21 @@ class TestSteeringController(unittest.TestCase):
         steer, error = sc.compute(current_heading_deg=0.0, dt=0.05)
         self.assertGreater(steer, 0)  # need to turn right to reach +30
 
+    def test_nudge_target_shifts_without_resetting_pid(self):
+        sc = SteeringController()
+        sc.hold_straight(0.0)
+        sc.compute(current_heading_deg=5.0, dt=0.05)  # build up some PID state
+        integral_before = sc._pid._integral
+        sc.nudge_target(2.0)
+        self.assertAlmostEqual(sc.target_heading_deg, 2.0)
+        # nudge_target must not reset accumulated PID state (unlike turn_by).
+        self.assertEqual(sc._pid._integral, integral_before)
+
+    def test_nudge_target_is_noop_before_any_target_locked(self):
+        sc = SteeringController()
+        sc.nudge_target(5.0)
+        self.assertIsNone(sc.target_heading_deg)
+
 
 if __name__ == "__main__":
     unittest.main()

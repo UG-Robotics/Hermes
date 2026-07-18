@@ -2,11 +2,28 @@
 
 // I2C Configuration
 const int IMU_I2C_ADDRESS = 0x6A;
-const int TOF_I2C_ADDRESS = 0x7E;
+//const int TOF_I2C_ADDRESS = 0x7E;
 const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
 
 const int IMU_SAMPLE_RATE_HZ = 104;
+
+// ---- ToF (VL53L0X x2) ------------------------------------------------
+// VL53L0X boots at a fixed default address (0x29) with no way to strap a
+// different one in hardware, so two on one bus need the standard XSHUT
+// dance: hold both in reset, bring the LEFT sensor up alone and re-address
+// it off 0x29, THEN bring the RIGHT sensor up (which is free to stay at
+// the now-vacated default). See firmware/esp_controller/tof.cpp.
+const int PIN_TOF_LEFT_XSHUT = 4;
+const int PIN_TOF_RIGHT_XSHUT = 5;
+const int TOF_DEFAULT_I2C_ADDRESS = 0x29;   // VL53L0X power-on default
+const int TOF_LEFT_I2C_ADDRESS = 0x30;      // re-addressed at boot, see tof.cpp
+const int TOF_RIGHT_I2C_ADDRESS = TOF_DEFAULT_I2C_ADDRESS;
+
+// Documents the sensor's expected ranging cycle time; not written to the
+// sensor directly (kept out of the timing-budget API to avoid depending on
+// a specific Adafruit_VL53L0X library version) -- it just explains why
+// TELEMETRY_INTERVAL below isn't tighter than this.
 const int TOF_TIMING_BUDGET_MS = 20;
 
 // Motor pins

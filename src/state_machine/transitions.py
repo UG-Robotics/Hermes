@@ -47,6 +47,21 @@ class TransitionManager:
             (State.LAP_CHECK,
              EventType.THREE_LAPS_COMPLETE): State.FINAL_APPROACH,
 
+            # NOTE: runtime.py raises THREE_LAPS_COMPLETE from inside
+            # _post_event_effects while handling the LAP_CHECK-exiting
+            # LAP_MARKER_DETECTED event, but state_machine/event_queue.py's
+            # EventQueue.drain() snapshots the whole queue before the
+            # for-loop starts (see runtime.py's _drain_events) -- so that
+            # freshly-pushed THREE_LAPS_COMPLETE is never in THIS tick's
+            # batch. By the time it's actually processed (next tick), the
+            # LAP_MARKER_DETECTED transition above has already fired and
+            # current_state is back to FOLLOW_TRACK, not LAP_CHECK. This is
+            # the mapping that's actually reachable; the LAP_CHECK one above
+            # is kept for robustness (e.g. a manually-injected event) but
+            # isn't the one the real perception path hits.
+            (State.FOLLOW_TRACK,
+             EventType.THREE_LAPS_COMPLETE): State.FINAL_APPROACH,
+
             # Final approach transitions
             (State.FINAL_APPROACH,
              EventType.PARKING_ZONE_DETECTED): State.PARK,
