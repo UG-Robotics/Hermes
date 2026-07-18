@@ -30,9 +30,20 @@ SPEED_DEFAULT_BACKWARD = 100
 SPEED_STOP = 0
 
 # Steering Constants (MG90S Servo Calibration)
-STEER_MIN = -90
-STEER_MAX = 90
+# STEER_MIN/STEER_MAX cap the autonomous PID's correction authority (it should
+# never be able to slam the servo to full lock on its own -- see
+# control/steering_control.py). They are NOT the wire-protocol range -- see
+# STEER_COMMAND_MIN/MAX below for that.
+STEER_MIN = -45
+STEER_MAX = 45
 STEER_CENTER_DEGREE = 32  # 90 degrees is the center calibration for the servo
+
+# Full command range the ESP32 actually expects on the wire (esp_controller.ino
+# maps this -90..90 onto SERVO_LEFT..SERVO_RIGHT). Used by protocol.py so
+# manual driving -- and anything else that wants full lock -- isn't silently
+# clamped down to the PID's half-authority STEER_MIN/STEER_MAX above.
+STEER_COMMAND_MIN = -90
+STEER_COMMAND_MAX = 90
 
 # Keyboard Mapping (laptop keyboard manual driving)
 KEY_TOGGLE_MANUAL = 'm'   # toggle manual <-> autonomous
@@ -42,7 +53,9 @@ KEY_LEFT = 'a'            # steer left (hold)
 KEY_RIGHT = 'd'           # steer right (hold)
 KEY_STOP = ' '            # spacebar: immediate stop / straighten
 
-# How hard manual steering turns, in the same -90..90 units as STEER_MIN/MAX.
+# How hard manual steering turns, in the same -90..90 units as
+# STEER_COMMAND_MIN/MAX (full lock -- manual is operator-controlled, so there's
+# no reason to cap it below the PID's correction-authority limit).
 STEER_MANUAL_DEGREE = 90
 
 # Arduino Pin Mappings (Hardcoded compliance on the board)
