@@ -78,6 +78,9 @@ class Runtime:
         self.auto_start = auto_start
         self.loop_interval = 1.0 / loop_hz
         self._hub = get_hub()
+        
+        # Scenario playback disables live event generation
+        self.scenario_active = False
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -262,37 +265,53 @@ class Runtime:
 
         if event.type == EventType.LAP_MARKER_DETECTED:
             if old_state == State.FOLLOW_TRACK:
-                # Entering LAP_CHECK: this is "one corner started". Count
-                # it, and if it's the very first corner marker we've ever
-                # seen this run, latch the run's direction from its colour
-                # (ORANGE = drive clockwise, BLUE = counter-clockwise --
-                # see perception/corner_detection.py's module docstring).
-                ctx.corners_passed += 1
-                if ctx.race_direction is None:
-                    color = event.metadata.get("color")
-                    if color == "ORANGE":
-                        ctx.race_direction = "CLOCKWISE"
-                    elif color == "BLUE":
-                        ctx.race_direction = "COUNTER_CLOCKWISE"
-                    if ctx.race_direction:
-                        logger.info(f"Race direction determined: {ctx.race_direction} "
-                                    f"(first corner marker was {color}).")
+              # Corner marker entered
+              ctx.corners_passed += 1
+
+              if ctx.race_direction is None:
+                  color = event.metadata.get("color")
+
+                  if color == "ORANGE":
+                      ctx.race_direction = "CLOCKWISE"
+
+                  elif color == "BLUE":
+                      ctx.race_direction = "COUNTER_CLOCKWISE"
+
+                  if ctx.race_direction:
+                      logger.info(
+                          f"Race direction determined: {ctx.race_direction}"
+                      )
+
+
             elif old_state == State.LAP_CHECK:
-                # Exiting LAP_CHECK back to FOLLOW_TRACK: "one corner
-                # finished". A full lap is CORNERS_PER_LAP (4) of these.
-                if ctx.corners_passed > 0 and ctx.corners_passed % CORNERS_PER_LAP == 0:
+                # Corner completed
+                ctx.corners_passed += 1
+
+                logger.info(
+                    f"Corner completed: {ctx.corners_passed}/{CORNERS_PER_LAP}"
+                )
+
+                if ctx.corners_passed % CORNERS_PER_LAP == 0:
+
                     ctx.increment_lap()
+
+                    logger.info(
+                        f"Lap complete: {ctx.lap_count}/{ctx.target_laps}"
+                    )
+
                     if ctx.lap_count >= ctx.target_laps:
-                        # The straight section we're already back in IS the
-                        # finish zone -- "on the extension of the starting
-                        # line segment" per the rules -- so raise both
-                        # together; see perception/finish_detection.py's
-                        # module docstring for why there's no separate
-                        # visual finish-line detector.
-                        self._events.push(make_event(EventType.THREE_LAPS_COMPLETE))
-                        self._events.push(make_event(EventType.FINISH_ZONE_DETECTED))
-                        logger.info("Target laps reached -- raising "
-                                    "THREE_LAPS_COMPLETE + FINISH_ZONE_DETECTED.")
+
+                      self._events.push(
+                          make_event(EventType.THREE_LAPS_COMPLETE)
+                      )
+
+                      logger.info(
+                          "Target laps reached -- raising THREE_LAPS_COMPLETE."
+                      )
+
+                      # Prevent accidental duplicate finish events
+                      ctx.target_laps = float("inf")
+                      
         elif event.type == EventType.PARKING_ZONE_DETECTED:
             ctx.parking_detected = True
 
@@ -330,7 +349,7 @@ class Runtime:
                 # turn_by() reset every frame.
                 self._update_lane_centering(frame)
 
-                if obs.new_detection:
+                if (not self.scenario_active) and obs.new_detection:
                     etype = EventType.PILLAR_DETECTED_RED if obs.color == "RED" else EventType.PILLAR_DETECTED_GREEN
                     metadata = {"steer_angle": obs.steer_angle, "distance_mm": obs.distance_mm,
                                 "cx": obs.cx, "area": obs.area}
@@ -339,7 +358,7 @@ class Runtime:
 
             elif state == State.AVOID_OBSTACLE:
                 ctx = self.state_machine.context
-                if obs.cleared:
+                if (not self.scenario_active) and obs.cleared:
                     self._events.push(make_event(EventType.OBSTACLE_CLEARED))
                     self._hub.event(EventType.OBSTACLE_CLEARED.name,
                                      EVENT_PRIORITY_MAP[EventType.OBSTACLE_CLEARED].name, source="vision")
@@ -379,7 +398,7 @@ class Runtime:
 
         fired = (state == State.FOLLOW_TRACK and obs.new_detection) or \
                 (state == State.LAP_CHECK and obs.cleared)
-        if fired:
+        if (not self.scenario_active) and fired:
             metadata = {"color": obs.color}
             self._events.push(make_event(EventType.LAP_MARKER_DETECTED, metadata=metadata))
             self._hub.event(EventType.LAP_MARKER_DETECTED.name,
@@ -393,7 +412,7 @@ class Runtime:
         _post_event_effects) is what reaches PARK instead.
         """
         obs = self.parking_tracker.update(frame)
-        if obs.confirmed:
+        if (not self.scenario_active) and obs.confirmed:
             metadata = {"cx": obs.cx, "area": obs.area}
             self._events.push(make_event(EventType.PARKING_ZONE_DETECTED, metadata=metadata))
             self._hub.event(EventType.PARKING_ZONE_DETECTED.name,
@@ -602,7 +621,40 @@ class Runtime:
                        "distance_mm": ctx.pillar_distance_mm},
             "simulated": self.simulated,
         })
+            
+    def reset_for_scenario(self):
+        """
+        Reset all runtime state for deterministic scenario playback.
+        Does not touch hardware connections.
+        """
 
+        logger.info("Resetting runtime for scenario playback.")
+
+        # Remove queued events
+        self._events = EventQueue()
+
+        # Reset state machine context
+        self.state_machine.context.reset()
+
+        # Reset state machine directly
+        self.state_machine.current_state = State.WAIT_FOR_START
+        self.state_machine.context.current_state = State.WAIT_FOR_START.name
+
+        # Reset controllers
+        self.steering.reset()
+
+        # Reset perception memory
+        self.pillar_detector.reset()
+        self.corner_tracker.reset()
+        self.parking_tracker.reset()
+
+        # Reset runtime bookkeeping
+        self._auto_start_fired = False
+        self._mode_flag = 0
+        self._last_tick_ts = None
+
+        logger.info("Scenario reset complete.")
+            
     # ==================================================================== loops
     def run_forever(self) -> None:
         """Blocking run loop (used by main.py)."""

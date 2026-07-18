@@ -40,29 +40,38 @@ SCENARIO_DIR = pathlib.Path(__file__).resolve().parent / "scenarios"
 def list_scenarios() -> List[dict]:
     """Return metadata for every scenario file shipped in scenarios/."""
     out = []
+
     if not SCENARIO_DIR.exists():
         return out
+
     for path in sorted(SCENARIO_DIR.glob("*.json")):
         try:
             data = json.loads(path.read_text())
+
             out.append({
                 "file": path.name,
                 "name": data.get("name", path.stem),
                 "description": data.get("description", ""),
                 "event_count": len(data.get("events", [])),
             })
+
         except Exception as e:
             logger.warning(f"Skipping unreadable scenario {path.name}: {e}")
+
     return out
 
 
 def load_scenario(name_or_file: str) -> dict:
     """Load a scenario by file name ('foo.json') or bare name ('foo')."""
+
     candidate = SCENARIO_DIR / name_or_file
+
     if not candidate.exists() and not name_or_file.endswith(".json"):
         candidate = SCENARIO_DIR / f"{name_or_file}.json"
+
     if not candidate.exists():
         raise FileNotFoundError(f"Scenario not found: {name_or_file}")
+
     return json.loads(candidate.read_text())
 
 
@@ -76,55 +85,118 @@ class ScenarioPlayer:
         self._cancel = threading.Event()
 
     def start(self, on_done: Optional[Callable[[], None]] = None) -> None:
+
         name = self.scenario.get("name", "scenario")
-        events = sorted(self.scenario.get("events", []), key=lambda e: e.get("at", 0))
-        logger.info(f"SCENARIO START: '{name}' ({len(events)} events)")
+
+        events = sorted(
+            self.scenario.get("events", []),
+            key=lambda e: e.get("at", 0)
+        )
+
+        logger.info(
+            f"SCENARIO START: '{name}' ({len(events)} events)"
+        )
+
+        # Reset runtime BEFORE enabling scenario mode.
+        # This prevents old FSM/context state from contaminating playback.
+        if hasattr(self.runtime, "reset_for_scenario"):
+            self.runtime.reset_for_scenario()
+
+        # Disable live perception-generated events while the scenario plays.
+        self.runtime.scenario_active = True
 
         def _run():
-            t0 = time.time()
-            for item in events:
-                if self._cancel.is_set():
-                    logger.warning("Scenario cancelled.")
-                    break
-                target = t0 + float(item.get("at", 0))
-                # Sleep in small slices so cancel is responsive.
-                while time.time() < target and not self._cancel.is_set():
-                    time.sleep(0.02)
-                if self._cancel.is_set():
-                    break
-                self.runtime.inject_event(item["event"], source="scenario")
-            logger.info(f"SCENARIO COMPLETE: '{name}'")
+
+            try:
+                t0 = time.time()
+
+                for item in events:
+
+                    if self._cancel.is_set():
+                        logger.warning("Scenario cancelled.")
+                        break
+
+                    target = t0 + float(item.get("at", 0))
+
+                    # Sleep in small slices so cancel remains responsive.
+                    while time.time() < target and not self._cancel.is_set():
+                        time.sleep(0.02)
+
+                    if self._cancel.is_set():
+                        break
+
+                    self.runtime.inject_event(
+                        item["event"],
+                        source="scenario"
+                    )
+
+                logger.info(
+                    f"SCENARIO COMPLETE: '{name}'"
+                )
+
+            finally:
+                # Always restore normal perception after playback.
+                self.runtime.scenario_active = False
+
             if on_done:
                 on_done()
 
-        self._thread = threading.Thread(target=_run, daemon=True, name="ScenarioPlayer")
+        self._thread = threading.Thread(
+            target=_run,
+            daemon=True,
+            name="ScenarioPlayer"
+        )
+
         self._thread.start()
 
     def cancel(self) -> None:
         self._cancel.set()
 
 
-def run_scenario_headless(name_or_file: str, settle: float = 2.0) -> List[dict]:
-    """Run a scenario against a fresh simulated Runtime and return the log records.
-
-    Handy for CI / quick checks: no dashboard, no keyboard, just "did the state
-    machine do the right thing?". Returns the log records captured during the run.
+def run_scenario_headless(
+    name_or_file: str,
+    settle: float = 2.0
+) -> List[dict]:
     """
-    from runtime import Runtime  # local import to avoid a cycle at module load
+    Run a scenario against a fresh simulated Runtime and return the log records.
+
+    Handy for CI / quick checks: no dashboard, no keyboard, just
+    "did the state machine do the right thing?".
+    """
+
+    from runtime import Runtime
 
     scenario = load_scenario(name_or_file)
-    runtime = Runtime(simulated=True, use_keyboard=False, use_camera=False)
+
+    runtime = Runtime(
+        simulated=True,
+        use_keyboard=False,
+        use_camera=False
+    )
+
     runtime.start_background()
 
     player = ScenarioPlayer(runtime, scenario)
+
     done = threading.Event()
+
     player.start(on_done=done.set)
 
-    # Wait for the scripted events, plus a little settle time for effects.
-    horizon = max((e.get("at", 0) for e in scenario.get("events", [])), default=0)
-    done.wait(timeout=horizon + settle + 5)
+    horizon = max(
+        (
+            e.get("at", 0)
+            for e in scenario.get("events", [])
+        ),
+        default=0
+    )
+
+    done.wait(
+        timeout=horizon + settle + 5
+    )
+
     time.sleep(settle)
 
     runtime.stop()
     runtime.shutdown()
+
     return runtime._hub.recent_logs()
