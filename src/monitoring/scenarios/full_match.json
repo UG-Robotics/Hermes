@@ -1,16 +1,31 @@
 {
   "name": "full_match",
-  "description": "A complete WRO run: start, dodge a red then a green pillar, then three laps to finish and park.",
+  "description": "A complete WRO run: start, avoid obstacles, complete three laps, then park.",
   "events": [
     {"at": 0.5, "event": "START_BUTTON_PRESSED"},
+
     {"at": 2.0, "event": "PILLAR_DETECTED_RED"},
     {"at": 3.5, "event": "OBSTACLE_CLEARED"},
+
     {"at": 5.0, "event": "PILLAR_DETECTED_GREEN"},
     {"at": 6.5, "event": "OBSTACLE_CLEARED"},
+
     {"at": 8.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 9.0, "event": "LAP_MARKER_DETECTED"},
     {"at": 10.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 11.0, "event": "LAP_MARKER_DETECTED"},
+
     {"at": 12.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 13.5, "event": "PARKING_ZONE_DETECTED"},
-    {"at": 15.0, "event": "PARKING_COMPLETE"}
+    {"at": 13.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 14.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 15.0, "event": "LAP_MARKER_DETECTED"},
+
+    {"at": 16.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 17.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 18.0, "event": "LAP_MARKER_DETECTED"},
+    {"at": 19.0, "event": "LAP_MARKER_DETECTED"},
+
+    {"at": 21.0, "event": "PARKING_ZONE_DETECTED"},
+    {"at": 23.0, "event": "PARKING_COMPLETE"}
   ]
 }

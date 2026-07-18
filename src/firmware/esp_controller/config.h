@@ -14,8 +14,8 @@ const int IMU_SAMPLE_RATE_HZ = 104;
 // dance: hold both in reset, bring the LEFT sensor up alone and re-address
 // it off 0x29, THEN bring the RIGHT sensor up (which is free to stay at
 // the now-vacated default). See firmware/esp_controller/tof.cpp.
-const int PIN_TOF_LEFT_XSHUT = 4;
-const int PIN_TOF_RIGHT_XSHUT = 5;
+const int PIN_TOF_LEFT_XSHUT = 32;
+const int PIN_TOF_RIGHT_XSHUT = 33;
 const int TOF_DEFAULT_I2C_ADDRESS = 0x29;   // VL53L0X power-on default
 const int TOF_LEFT_I2C_ADDRESS = 0x30;      // re-addressed at boot, see tof.cpp
 const int TOF_RIGHT_I2C_ADDRESS = TOF_DEFAULT_I2C_ADDRESS;

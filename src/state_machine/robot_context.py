@@ -119,6 +119,7 @@ class RobotContext:
         )
 
         self.lap_count = 0
+        self.target_laps = 3
 
         self.current_state = "INIT"
         self.previous_state = None
