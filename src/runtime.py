@@ -42,6 +42,14 @@ from state_machine.event_queue import EventQueue
 from state_machine.events import EventType, make_event, EVENT_PRIORITY_MAP
 
 from perception.pillar_detection import PillarDetector
+from perception.track_detection import detect_lane
+from perception.corner_detection import CornerTracker
+from perception.finish_detection import ParkingZoneTracker
+
+from planning.lane_centering import compute_heading_nudge
+from planning.obstacle_planner import adjust_avoidance_steer
+
+from config.thresholds import CORNERS_PER_LAP
 
 from hardware.buttons import KeyboardOverrideListener
 from hardware.imu import IMU
@@ -54,7 +62,7 @@ logger = get_logger("Runtime")
 # Outside these (WAIT_FOR_START, LAP_CHECK, PARK, ...) we don't spend CPU on
 # it, and we don't want a stray blob in frame raising a PILLAR_DETECTED event
 # somewhere it isn't a valid transition anyway.
-_VISION_ACTIVE_STATES = (State.FOLLOW_TRACK, State.AVOID_OBSTACLE)
+_VISION_ACTIVE_STATES = (State.FOLLOW_TRACK, State.AVOID_OBSTACLE, State.LAP_CHECK, State.FINAL_APPROACH)
 
 # Actions for which the IMU heading-hold controller applies a correction.
 # STOP means "not moving" -- no point correcting a steer angle for a
@@ -127,6 +135,8 @@ class Runtime:
 
         # --- pillar avoidance + IMU heading-hold control -------------------
         self.pillar_detector = PillarDetector()
+        self.corner_tracker = CornerTracker()
+        self.parking_tracker = ParkingZoneTracker()
         self.steering = SteeringController()
 
         # The Pi has no way to know the IMU/ToF are alive except by actually
@@ -160,6 +170,22 @@ class Runtime:
             time.sleep(poll_interval_s)
         return self.imu.healthy() and self.tof.healthy()
 
+    # ================================================================== ToF
+    def _refresh_tof_context(self) -> None:
+        """Publish this tick's freshest ToF reading into RobotContext.
+
+        Called right after _drain_incoming() so control/drive_command.py's
+        speed scaling and planning/obstacle_planner.py's avoidance-steer
+        capping both see this tick's wall distances, not a stale reading
+        from before we last heard from the ESP32. self.tof.read() is a pure
+        pass-through over telemetry _drain_incoming() just published (see
+        hardware/tof.py's module docstring) -- no hardware access here.
+        """
+        tof = self.tof.read()
+        ctx = self.state_machine.context
+        ctx.tof_left_mm = tof["left_mm"]
+        ctx.tof_right_mm = tof["right_mm"]
+
     # ============================================================ event inject
     def inject_event(self, event_type_name: str, source: str = "manual", metadata: Optional[dict] = None) -> bool:
         """Queue a state-machine event by name (e.g. 'START_BUTTON_PRESSED')."""
@@ -181,13 +207,13 @@ class Runtime:
             new = self.state_machine.current_state
             if new != old:
                 self._hub.state(old.name, new.name, via=event.type.name)
-            self._post_event_effects(event)
+            self._post_event_effects(event, old_state=old)
             if new == State.ERROR:
                 # Stale integral/target-heading state must not survive into
                 # whatever run comes after a manual reset.
                 self.steering.reset()
 
-    def _post_event_effects(self, event) -> None:
+    def _post_event_effects(self, event, old_state) -> None:
         """Bookkeeping the bare state machine doesn't do: record which pillar
         we're avoiding and its computed steer/distance (so drive_command can
         steer around it), lock IMU heading-hold targets, count laps, and
@@ -204,14 +230,25 @@ class Runtime:
         # a sane, correctly-signed default so those entry points still work.
         if event.type == EventType.PILLAR_DETECTED_RED:
             ctx.last_pillar_color = "RED"
-            ctx.pillar_steer_angle = event.metadata.get("steer_angle") or 30
+            raw_steer = event.metadata.get("steer_angle") or 30
+            # TOF-aware cap: don't commit to the full avoidance angle if the
+            # wall on the side we're about to swing toward (RIGHT, passing a
+            # red pillar) is already close -- see planning/obstacle_planner.py.
+            plan = adjust_avoidance_steer(raw_steer, "RIGHT", ctx.tof_left_mm, ctx.tof_right_mm)
+            ctx.pillar_steer_angle = plan.steer_angle
             ctx.pillar_distance_mm = event.metadata.get("distance_mm")
             self.steering.turn_by(current_heading, ctx.pillar_steer_angle)
+            if plan.wall_nudge_deg:
+                self.steering.nudge_target(plan.wall_nudge_deg)
         elif event.type == EventType.PILLAR_DETECTED_GREEN:
             ctx.last_pillar_color = "GREEN"
-            ctx.pillar_steer_angle = event.metadata.get("steer_angle") or -30
+            raw_steer = event.metadata.get("steer_angle") or -30
+            plan = adjust_avoidance_steer(raw_steer, "LEFT", ctx.tof_left_mm, ctx.tof_right_mm)
+            ctx.pillar_steer_angle = plan.steer_angle
             ctx.pillar_distance_mm = event.metadata.get("distance_mm")
             self.steering.turn_by(current_heading, ctx.pillar_steer_angle)
+            if plan.wall_nudge_deg:
+                self.steering.nudge_target(plan.wall_nudge_deg)
         elif event.type == EventType.OBSTACLE_CLEARED:
             ctx.last_pillar_color = None
             ctx.pillar_steer_angle = 0
@@ -224,10 +261,40 @@ class Runtime:
             self.steering.hold_straight(current_heading)
 
         if event.type == EventType.LAP_MARKER_DETECTED:
-            ctx.increment_lap()
-            if ctx.lap_count >= ctx.target_laps:
-                self._events.push(make_event(EventType.THREE_LAPS_COMPLETE))
-                logger.info("Target laps reached -- raising THREE_LAPS_COMPLETE.")
+            if old_state == State.FOLLOW_TRACK:
+                # Entering LAP_CHECK: this is "one corner started". Count
+                # it, and if it's the very first corner marker we've ever
+                # seen this run, latch the run's direction from its colour
+                # (ORANGE = drive clockwise, BLUE = counter-clockwise --
+                # see perception/corner_detection.py's module docstring).
+                ctx.corners_passed += 1
+                if ctx.race_direction is None:
+                    color = event.metadata.get("color")
+                    if color == "ORANGE":
+                        ctx.race_direction = "CLOCKWISE"
+                    elif color == "BLUE":
+                        ctx.race_direction = "COUNTER_CLOCKWISE"
+                    if ctx.race_direction:
+                        logger.info(f"Race direction determined: {ctx.race_direction} "
+                                    f"(first corner marker was {color}).")
+            elif old_state == State.LAP_CHECK:
+                # Exiting LAP_CHECK back to FOLLOW_TRACK: "one corner
+                # finished". A full lap is CORNERS_PER_LAP (4) of these.
+                if ctx.corners_passed > 0 and ctx.corners_passed % CORNERS_PER_LAP == 0:
+                    ctx.increment_lap()
+                    if ctx.lap_count >= ctx.target_laps:
+                        # The straight section we're already back in IS the
+                        # finish zone -- "on the extension of the starting
+                        # line segment" per the rules -- so raise both
+                        # together; see perception/finish_detection.py's
+                        # module docstring for why there's no separate
+                        # visual finish-line detector.
+                        self._events.push(make_event(EventType.THREE_LAPS_COMPLETE))
+                        self._events.push(make_event(EventType.FINISH_ZONE_DETECTED))
+                        logger.info("Target laps reached -- raising "
+                                    "THREE_LAPS_COMPLETE + FINISH_ZONE_DETECTED.")
+        elif event.type == EventType.PARKING_ZONE_DETECTED:
+            ctx.parking_detected = True
 
     # ================================================================= vision
     def _update_vision(self) -> None:
@@ -236,6 +303,10 @@ class Runtime:
         any pillar, and raise the appropriate state-machine event. Step (iv)
         (steering angle + distance) is computed inside PillarDetector and
         carried in the event's metadata for _post_event_effects to consume.
+
+        Also dispatches corner-marker tracking (FOLLOW_TRACK + LAP_CHECK)
+        and parking-zone tracking (FINAL_APPROACH) off the same captured
+        frame -- see _update_corner_tracking()/_update_parking_zone().
         """
         if self.camera is None:
             return
@@ -247,29 +318,103 @@ class Runtime:
         if frame is None:
             return
 
-        obs = self.pillar_detector.update(frame, self.camera.width)
+        if state in (State.FOLLOW_TRACK, State.AVOID_OBSTACLE):
+            obs = self.pillar_detector.update(frame, self.camera.width)
 
-        if state == State.FOLLOW_TRACK and obs.new_detection:
-            etype = EventType.PILLAR_DETECTED_RED if obs.color == "RED" else EventType.PILLAR_DETECTED_GREEN
-            metadata = {"steer_angle": obs.steer_angle, "distance_mm": obs.distance_mm,
-                        "cx": obs.cx, "area": obs.area}
-            self._events.push(make_event(etype, metadata=metadata))
-            self._hub.event(etype.name, EVENT_PRIORITY_MAP[etype].name, source="vision")
+            if state == State.FOLLOW_TRACK:
+                # Continuous camera-based corridor centering -- runs every tick
+                # regardless of pillar state, nudging the heading-hold target
+                # toward the detected wall midpoint. See
+                # planning/lane_centering.py's module docstring for why this is
+                # a nudge (SteeringController.nudge_target) rather than a
+                # turn_by() reset every frame.
+                self._update_lane_centering(frame)
 
-        elif state == State.AVOID_OBSTACLE:
-            ctx = self.state_machine.context
-            if obs.cleared:
-                self._events.push(make_event(EventType.OBSTACLE_CLEARED))
-                self._hub.event(EventType.OBSTACLE_CLEARED.name,
-                                 EVENT_PRIORITY_MAP[EventType.OBSTACLE_CLEARED].name, source="vision")
-            elif obs.present:
-                # Keep distance/steer telemetry fresh for logging/dashboard
-                # while mid-manoeuvre. We deliberately do NOT re-lock a new
-                # heading target every frame here (that would reset the PID's
-                # integral continuously and produce a jittery turn) -- the
-                # target set once on new_detection is held until cleared.
-                if obs.distance_mm is not None:
-                    ctx.pillar_distance_mm = obs.distance_mm
+                if obs.new_detection:
+                    etype = EventType.PILLAR_DETECTED_RED if obs.color == "RED" else EventType.PILLAR_DETECTED_GREEN
+                    metadata = {"steer_angle": obs.steer_angle, "distance_mm": obs.distance_mm,
+                                "cx": obs.cx, "area": obs.area}
+                    self._events.push(make_event(etype, metadata=metadata))
+                    self._hub.event(etype.name, EVENT_PRIORITY_MAP[etype].name, source="vision")
+
+            elif state == State.AVOID_OBSTACLE:
+                ctx = self.state_machine.context
+                if obs.cleared:
+                    self._events.push(make_event(EventType.OBSTACLE_CLEARED))
+                    self._hub.event(EventType.OBSTACLE_CLEARED.name,
+                                     EVENT_PRIORITY_MAP[EventType.OBSTACLE_CLEARED].name, source="vision")
+                elif obs.present:
+                    # Keep distance/steer telemetry fresh for logging/dashboard
+                    # while mid-manoeuvre. We deliberately do NOT re-lock a new
+                    # heading target every frame here via turn_by() (that would
+                    # reset the PID's integral continuously and produce a
+                    # jittery turn) -- the target set once on new_detection is
+                    # held until cleared. A side ToF reading a critically close
+                    # wall mid-manoeuvre still gets a small corrective nudge
+                    # (nudge_target(), not a reset) on top of that held target.
+                    if obs.distance_mm is not None:
+                        ctx.pillar_distance_mm = obs.distance_mm
+                    direction = "RIGHT" if ctx.last_pillar_color == "RED" else "LEFT"
+                    plan = adjust_avoidance_steer(ctx.pillar_steer_angle, direction,
+                                                   ctx.tof_left_mm, ctx.tof_right_mm)
+                    if plan.wall_nudge_deg:
+                        self.steering.nudge_target(plan.wall_nudge_deg)
+
+        if state in (State.FOLLOW_TRACK, State.LAP_CHECK):
+            self._update_corner_tracking(frame, state)
+
+        if state == State.FINAL_APPROACH:
+            self._update_parking_zone(frame)
+
+    def _update_corner_tracking(self, frame, state) -> None:
+        """Runs during FOLLOW_TRACK (watching for the next corner to start)
+        and LAP_CHECK (watching for the corner we're already in to end).
+        Both edges raise the SAME LAP_MARKER_DETECTED event -- see
+        perception/corner_detection.py's module docstring for why this
+        deliberately mirrors PillarObservation's new_detection/cleared
+        pair, and _post_event_effects for how the two edges are told
+        apart (by which state the state machine was in when each fired).
+        """
+        obs = self.corner_tracker.update(frame, self.camera.width)
+
+        fired = (state == State.FOLLOW_TRACK and obs.new_detection) or \
+                (state == State.LAP_CHECK and obs.cleared)
+        if fired:
+            metadata = {"color": obs.color}
+            self._events.push(make_event(EventType.LAP_MARKER_DETECTED, metadata=metadata))
+            self._hub.event(EventType.LAP_MARKER_DETECTED.name,
+                             EVENT_PRIORITY_MAP[EventType.LAP_MARKER_DETECTED].name, source="vision")
+
+    def _update_parking_zone(self, frame) -> None:
+        """FINAL_APPROACH only: watch for the obstacle-challenge parking
+        lot's magenta boundary. Open-challenge runs simply never see one --
+        the mat has no magenta on it -- so this harmlessly never fires and
+        FINISH_ZONE_DETECTED (raised from lap-completion bookkeeping, see
+        _post_event_effects) is what reaches PARK instead.
+        """
+        obs = self.parking_tracker.update(frame)
+        if obs.confirmed:
+            metadata = {"cx": obs.cx, "area": obs.area}
+            self._events.push(make_event(EventType.PARKING_ZONE_DETECTED, metadata=metadata))
+            self._hub.event(EventType.PARKING_ZONE_DETECTED.name,
+                             EVENT_PRIORITY_MAP[EventType.PARKING_ZONE_DETECTED].name, source="vision")
+
+    def _update_lane_centering(self, frame) -> None:
+        """One tick of camera-based corridor centering (FOLLOW_TRACK only).
+
+        Detects the corridor's centre offset from the current frame
+        (perception/track_detection.py), records it on the context for
+        telemetry/dashboard, and -- if the detection is trustworthy enough
+        -- nudges the heading-hold controller's locked target toward it.
+        """
+        obs = detect_lane(frame, self.camera.width, self.camera.height)
+        ctx = self.state_machine.context
+        ctx.lane_offset_px = obs.offset_px if obs.valid else None
+        ctx.lane_confidence = obs.confidence
+
+        nudge = compute_heading_nudge(obs, self.camera.width)
+        if nudge:
+            self.steering.nudge_target(nudge)
 
     def _maybe_auto_start(self) -> None:
         if self._auto_start_fired or not self.auto_start:
@@ -362,6 +507,12 @@ class Runtime:
         #    every decision below is based on this tick's freshest data.
         self._drain_incoming()
 
+        # 1b) Publish this tick's freshest ToF reading onto the context --
+        #     must run before vision/drive-decide so obstacle-planning and
+        #     speed scaling below see this tick's wall distances, not a
+        #     stale one. See _refresh_tof_context()'s docstring.
+        self._refresh_tof_context()
+
         # 2) PERCEIVE: look for pillars and raise events off real vision.
         self._update_vision()
 
@@ -429,7 +580,9 @@ class Runtime:
         self.link.send(packet)
 
         # One tidy status record the dashboard renders as the "current state".
-        tof = self.tof.read()
+        # tof_left_mm/right_mm were already refreshed this tick by
+        # _refresh_tof_context() (step 1b), so this is just re-reading the
+        # context, not the hardware.
         self._hub.publish("status", {
             "state": self.state_machine.current_state.name,
             "mode": "MANUAL" if mode_flag else "AUTO",
@@ -439,7 +592,12 @@ class Runtime:
             "target_heading_deg": None if target_heading is None else round(target_heading, 1),
             "heading_error_deg": round(heading_error, 1),
             "imu": {k: round(v, 3) for k, v in imu_reading.items() if k != "heading_deg"},
-            "tof": {"left_mm": round(tof["left_mm"], 1), "right_mm": round(tof["right_mm"], 1)},
+            "tof": {"left_mm": round(ctx.tof_left_mm, 1), "right_mm": round(ctx.tof_right_mm, 1)},
+            "lane": {"offset_px": ctx.lane_offset_px,
+                     "confidence": round(ctx.lane_confidence, 2)},
+            "corner": {"corners_passed": ctx.corners_passed,
+                       "race_direction": ctx.race_direction,
+                       "parking_detected": ctx.parking_detected},
             "pillar": {"color": ctx.last_pillar_color, "steer_angle": ctx.pillar_steer_angle,
                        "distance_mm": ctx.pillar_distance_mm},
             "simulated": self.simulated,

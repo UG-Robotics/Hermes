@@ -6,6 +6,8 @@ from config.robot_config import (
     SPEED_STOP,
     STEER_CENTER_DEGREE,
 )
+from planning.obstacle_planner import general_speed_scale
+from control.speed_controller import apply_speed_scale
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,14 +25,21 @@ def drive_command(state: State, context: RobotContext) -> tuple[int, int, str]:
     """
 
     if state == State.FOLLOW_TRACK:
-        speed = SPEED_DEFAULT_FORWARD
+        # TOF wall-clearance speed scaling: ease off if a side wall is
+        # close (tight corner, narrow 600mm open-challenge corridor, etc.)
+        # -- see planning/obstacle_planner.py. context.tof_left_mm/right_mm
+        # are refreshed every tick in runtime.py right after telemetry
+        # ingest, so this always sees this tick's freshest wall distances.
+        scale = general_speed_scale(context.tof_left_mm, context.tof_right_mm)
+        speed = apply_speed_scale(SPEED_DEFAULT_FORWARD, scale)
         # This is only the intent handed to the IMU heading-hold controller
         # (control/steering_control.py) in runtime.py, which locks "straight
-        # from here" and does the actual closed-loop correction, not the
-        # final steer value sent to the ESP32.
+        # from here" (nudged toward the camera-detected corridor centre by
+        # planning/lane_centering.py) and does the actual closed-loop
+        # correction, not the final steer value sent to the ESP32.
         steer = 0
         action = "FORWARD"
-        logger.debug(f"[DRIVE] FOLLOW_TRACK -> speed={speed}, steer intent={steer}")
+        logger.debug(f"[DRIVE] FOLLOW_TRACK -> speed={speed} (scale={scale:.2f}), steer intent={steer}")
 
     elif state == State.AVOID_OBSTACLE:
         # Competition rule: pass RIGHT of RED pillars, LEFT of GREEN pillars.
@@ -49,9 +58,18 @@ def drive_command(state: State, context: RobotContext) -> tuple[int, int, str]:
             steer = -30  # pass on the left
         else:
             steer = 0
-        speed = SPEED_DEFAULT_FORWARD
+        # Same wall-clearance speed scaling as FOLLOW_TRACK. The steer angle
+        # itself is ALREADY capped for wall proximity by
+        # planning.obstacle_planner.adjust_avoidance_steer() at the point
+        # runtime.py locks it via context.pillar_steer_angle (see
+        # runtime.py's _post_event_effects) -- this is only the speed term.
+        scale = general_speed_scale(context.tof_left_mm, context.tof_right_mm)
+        speed = apply_speed_scale(SPEED_DEFAULT_FORWARD, scale)
         action = "FORWARD"
-        logger.debug(f"[DRIVE] AVOID_OBSTACLE -> pillar={context.last_pillar_color}, steer intent={steer}")
+        logger.debug(
+            f"[DRIVE] AVOID_OBSTACLE -> pillar={context.last_pillar_color}, "
+            f"steer intent={steer}, speed={speed} (scale={scale:.2f})"
+        )
 
     elif state == State.LAP_CHECK:
         # Slow down briefly while lap count is being verified

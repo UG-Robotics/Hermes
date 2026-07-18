@@ -73,6 +73,27 @@ class SteeringController:
         self._target_heading = _wrap_deg(current_heading_deg + delta_deg)
         self._pid.reset()
 
+    def nudge_target(self, delta_deg: float) -> None:
+        """Incrementally shift the already-locked target heading by
+        `delta_deg`, WITHOUT resetting the PID.
+
+        This is the continuous-correction counterpart to turn_by(): turn_by()
+        is for a one-shot manoeuvre (a fresh pillar detection) where
+        resetting the PID's integral/derivative history is exactly right.
+        Calling turn_by() every tick instead (e.g. from
+        planning/lane_centering.py, which computes a new nudge every frame)
+        would reset that history every tick and turn the heading-hold loop
+        jittery. nudge_target() just drags the aim point a little and lets
+        the PID's existing state keep smoothing the servo toward it.
+
+        No-op if hold_straight()/turn_by() haven't locked a target yet (the
+        next compute() call will lock one from the current heading, same as
+        before this method existed).
+        """
+        if self._target_heading is None:
+            return
+        self._target_heading = _wrap_deg(self._target_heading + delta_deg)
+
     @property
     def target_heading_deg(self) -> float | None:
         return self._target_heading

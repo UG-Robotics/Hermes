@@ -36,6 +36,14 @@ try:
 except Exception:
     _PIL = False
 
+# numpy is optional too, and only needed for get_frame()'s synthetic-array
+# fallback below (perception consumes numpy arrays, not JPEGs/PIL Images).
+try:
+    import numpy as np
+    _NUMPY = True
+except Exception:
+    _NUMPY = False
+
 
 class Camera:
     def __init__(self, simulated: bool = False, width: int = 320, height: int = 240, fps: int = 15):
@@ -111,9 +119,22 @@ class Camera:
             return self._real_jpeg()
 
     def get_frame(self):
-        """Return a raw frame (numpy array) for perception, or None."""
+        """Return a raw frame (numpy array) for perception.
+
+        Returns a drawn SYNTHETIC frame (see _synthetic_frame()) when
+        there's no real backend, instead of None -- get_jpeg()'s
+        _real_jpeg() already had this "no camera -> draw one instead"
+        fallback for the dashboard stream; perception (pillar/lane/corner/
+        parking detection, all under perception/) needs the same fallback
+        on the raw-array path it actually reads, or none of that code ever
+        runs at all under Runtime(simulated=True) -- it silently no-ops on
+        `if frame is None: return`, which looks like "ran and saw nothing"
+        rather than "never ran". Can still return None: only if neither
+        PIL nor numpy is installed (see _synthetic_frame()), or a real
+        backend's read genuinely fails this tick.
+        """
         if self._impl is None:
-            return None
+            return self._synthetic_frame()
         kind, dev = self._impl
         try:
             if kind == "picamera2":
@@ -153,10 +174,16 @@ class Camera:
         return self._synthetic_jpeg()
 
     # --------------------------------------------------------------- synthetic
-    def _synthetic_jpeg(self) -> bytes:
-        """Draw a simple corridor + pillars that pans with the simulated pose."""
+    def _draw_synthetic_scene(self):
+        """Draw the corridor + pillars scene and return it as a PIL Image,
+        or None if PIL isn't installed. Shared by _synthetic_jpeg() (JPEG
+        bytes, for the dashboard stream) and _synthetic_frame() (numpy
+        array, for perception) so the two can never drift out of sync --
+        pillar/lane/corner/parking detection see exactly the scene the
+        dashboard is showing.
+        """
         if not _PIL:
-            return _PLACEHOLDER_JPEG
+            return None
 
         # Pan the scene by the robot's integrated heading (degrees), not the raw
         # gyro rate — heading is what actually tells us where the car is pointing,
@@ -193,9 +220,44 @@ class Camera:
         d.text((6, 4), f"SYNTHETIC CAM  f{t}", fill=(230, 230, 230))
         d.text((6, h - 14), f"hdg {heading:+.0f} deg", fill=(180, 180, 190))
 
+        return img
+
+    def _synthetic_jpeg(self) -> bytes:
+        """Draw a simple corridor + pillars that pans with the simulated pose."""
+        img = self._draw_synthetic_scene()
+        if img is None:
+            return _PLACEHOLDER_JPEG
+
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=70)
         return out.getvalue()
+
+    def _synthetic_frame(self):
+        """Numpy-array counterpart to _synthetic_jpeg(), for get_frame().
+
+        Returns None (same "nothing available" contract a real backend's
+        failed read already has) only if PIL and/or numpy aren't
+        installed -- everywhere the rest of the perception code already
+        null-checks get_frame()'s result, so this degrades the same way a
+        disconnected real camera would, it just can't happen on a normal
+        install where requirements.txt's opencv-python pulls numpy in
+        anyway.
+        """
+        if not _NUMPY:
+            logger.warning("numpy not installed -- get_frame() has no synthetic fallback, "
+                            "perception will see no frames in simulated mode.")
+            return None
+
+        img = self._draw_synthetic_scene()
+        if img is None:
+            logger.warning("Pillow not installed -- get_frame() has no synthetic fallback, "
+                            "perception will see no frames in simulated mode.")
+            return None
+
+        # PIL Images are RGB; every perception module (pillar/track/corner/
+        # finish_detection) already assumes a native RGB array, same
+        # convention documented in perception/pillar_detection.py.
+        return np.array(img)
 
 
 def _build_placeholder() -> bytes:

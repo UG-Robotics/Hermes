@@ -3,6 +3,7 @@
 #include "motor.h"
 #include "servo_control.h"
 #include "imu.h"
+#include "tof.h"
 #include "start_button.h"
 
 namespace
@@ -21,7 +22,6 @@ namespace
         {
             setMotorSpeed(0);
             setSteeringAngle(SERVO_CENTER);
-            sendStatus("APPLY STOP motor=0 steer=90");
             return;
         }
 
@@ -40,9 +40,7 @@ namespace
         // protocol into the physical servo. Whatever the Pi sent -- whether
         // that's raw manual input or the output of the IMU heading-hold PID
         // (control/steering_control.py) -- lands here identically.
-        int servoAngle = map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT);
-        setSteeringAngle(servoAngle);
-        sendStatus("APPLY CMD motor=" + String(motorSpeed) + " steer=" + String(servoAngle) + " action=" + command.action);
+        setSteeringAngle(map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT));
     }
 }
 
@@ -53,6 +51,8 @@ void setup() {
     initStartButton();
     initIMU(); // failure is non-fatal: readIMU() falls back to level/stationary
                // defaults and the STATUS,ERR line already told the Pi why.
+    initTOF(); // same deal: non-fatal, readTOF() holds 0.0 for any sensor
+               // that failed to come up and the STATUS,ERR line says which.
 
     activeCommand.valid = true;
     applyCommand(activeCommand);
@@ -79,7 +79,7 @@ void loop() {
     updateServo();
 
     RobotTelemetry telemetry;
-    readIMU(telemetry); // fills ax..gz; tof1_mm/tof2_mm remain 0.0 until a
-                         // ToF driver is wired up (out of scope here)
+    readIMU(telemetry); // fills ax..gz
+    readTOF(telemetry); // fills tof1_mm (left) / tof2_mm (right)
     sendTelemetry(telemetry);
 }

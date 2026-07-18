@@ -29,6 +29,29 @@ class RobotContext:
 
     obstacle_active: bool = False
 
+    # Latest side ToF readings, refreshed every tick by
+    # runtime.py's _refresh_tof_context() right after telemetry ingest.
+    # Always a float (never None) -- 2000.0 (TOF_MAX_VALID_MM) means "no
+    # wall in range", matching hardware/tof.py's ToFArray.OUT_OF_RANGE_MM
+    # default, so consumers never have to null-check it.
+    tof_left_mm: float = 2000.0
+    tof_right_mm: float = 2000.0
+
+    # Latest camera-based corridor-centre offset (see
+    # perception/track_detection.py + planning/lane_centering.py). None
+    # until the first valid detection; confidence stays 0.0 until then too.
+    lane_offset_px: int | None = None
+    lane_confidence: float = 0.0
+
+    # Corner-marker bookkeeping (see perception/corner_detection.py +
+    # runtime.py's _post_event_effects). corners_passed counts every
+    # completed corner traversal since the run started; a lap completes
+    # every CORNERS_PER_LAP of them. race_direction is latched from the
+    # colour of the first corner marker ever seen ("CLOCKWISE" |
+    # "COUNTER_CLOCKWISE"), None until then.
+    corners_passed: int = 0
+    race_direction: str | None = None
+
     parking_detected: bool = False
     parking_complete: bool = False
 
@@ -106,6 +129,14 @@ class RobotContext:
         self.target_heading_deg = None
 
         self.obstacle_active = False
+
+        self.tof_left_mm = 2000.0
+        self.tof_right_mm = 2000.0
+        self.lane_offset_px = None
+        self.lane_confidence = 0.0
+
+        self.corners_passed = 0
+        self.race_direction = None
 
         self.parking_detected = False
         self.parking_complete = False
