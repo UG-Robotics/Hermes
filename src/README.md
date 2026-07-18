@@ -58,7 +58,7 @@ The Raspberry Pi acts as the high-level autonomy computer:
 * planning
 * decision-making
 
-The STM32 / Arduino Nano acts as the low-level controller:
+The ESP32 acts as the low-level controller:
 
 * PWM generation
 * steering actuation

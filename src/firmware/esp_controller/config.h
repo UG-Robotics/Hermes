@@ -37,9 +37,9 @@ const int MOTOR_PWM_RESOLUTION = 8;
 
 // Steering servo
 const int PIN_STEERING_SERVO = 14;
-const int SERVO_CENTER = 90;
-const int SERVO_LEFT = 45;
-const int SERVO_RIGHT = 135;
+const int SERVO_CENTER = 32;
+const int SERVO_LEFT = 62;
+const int SERVO_RIGHT = 2;
 
 // Start button
 const int PIN_START_BUTTON = 2;

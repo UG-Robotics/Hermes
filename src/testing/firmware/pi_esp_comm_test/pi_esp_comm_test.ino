@@ -10,9 +10,9 @@ const int PIN_MOTOR_IN2 = 19;
 const int PIN_MOTOR_PWM = 23;
 const int PIN_STEERING_SERVO = 14;
 
-const int SERVO_CENTER = 90;
-const int SERVO_LEFT = 45;
-const int SERVO_RIGHT = 135;
+const int SERVO_CENTER = 32;
+const int SERVO_LEFT = 62;
+const int SERVO_RIGHT = 2;
 
 const int BAUD_RATE = 115200;
 const int MOTOR_PWM_FREQ = 1000;

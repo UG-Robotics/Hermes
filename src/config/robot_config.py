@@ -30,9 +30,9 @@ SPEED_DEFAULT_BACKWARD = 100
 SPEED_STOP = 0
 
 # Steering Constants (MG90S Servo Calibration)
-STEER_MIN = -90
-STEER_MAX = 90
-STEER_CENTER_DEGREE = 90  # 90 degrees is the center calibration for the servo
+STEER_MIN = -45
+STEER_MAX = 45
+STEER_CENTER_DEGREE = 32  # 90 degrees is the center calibration for the servo
 
 # Keyboard Mapping (laptop keyboard manual driving)
 KEY_TOGGLE_MANUAL = 'm'   # toggle manual <-> autonomous
@@ -43,7 +43,7 @@ KEY_RIGHT = 'd'           # steer right (hold)
 KEY_STOP = ' '            # spacebar: immediate stop / straighten
 
 # How hard manual steering turns, in the same -90..90 units as STEER_MIN/MAX.
-STEER_MANUAL_DEGREE = 45
+STEER_MANUAL_DEGREE = 32
 
 # Arduino Pin Mappings (Hardcoded compliance on the board)
 PIN_START_BUTTON = 2
