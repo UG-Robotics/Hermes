@@ -19,8 +19,8 @@ class TestProtocolSerialization(unittest.TestCase):
             "CMD,150,0,FORWARD,1\n"
         )
         self.assertEqual(
-            serialize_command(100, -45, "BACKWARD", 0),
-            "CMD,100,-45,BACKWARD,0\n"
+            serialize_command(100, -32, "BACKWARD", 0),
+            "CMD,100,-32,BACKWARD,0\n"
         )
         self.assertEqual(
             serialize_command(0, 90, "STOP", 0),
