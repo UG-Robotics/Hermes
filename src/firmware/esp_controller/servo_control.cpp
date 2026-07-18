@@ -36,7 +36,11 @@ void initServo()
 
 void setSteeringAngle(int angleDegrees)
 {
-    currentSteeringAngle = constrain(angleDegrees, SERVO_LEFT, SERVO_RIGHT);
+    int minAngle = min(SERVO_LEFT, SERVO_RIGHT);
+    int maxAngle = max(SERVO_LEFT, SERVO_RIGHT);
+
+    currentSteeringAngle = constrain(angleDegrees, minAngle, maxAngle);
+
     ledcWrite(PIN_STEERING_SERVO, angleToDuty(currentSteeringAngle));
 }
 
