@@ -29,7 +29,7 @@ from config.thresholds import (
     AVOIDANCE_STEER_CAP_NEAR_WALL_DEG, AVOIDANCE_WALL_NUDGE_DEG,
     SPEED_SCALE_WALL_WARNING, SPEED_SCALE_WALL_CRITICAL, SPEED_SCALE_MIN,
 )
-from config.robot_config import STEER_MIN, STEER_MAX
+from config.camera_config import PILLAR_MAX_STEER_DEG
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -81,7 +81,15 @@ def adjust_avoidance_steer(steer_angle: int, direction: str,
 
     speed_scale = _speed_scale_for_clearance(tof_left_mm, tof_right_mm)
 
-    steer = int(max(STEER_MIN, min(STEER_MAX, capped)))
+    # Clamp to the pillar-avoidance ceiling (PILLAR_MAX_STEER_DEG), NOT the
+    # heading-hold PID's ±STEER_MAX correction authority. This value is a
+    # turn-by *intent* (runtime.py converts it into a target heading via
+    # SteeringController.turn_by); the PID then drives the servo to hold that
+    # heading, and its own output is separately clamped to ±STEER_MAX inside
+    # control/steering_control.py. Clamping the intent to ±45 here would have
+    # silently capped every avoidance swing below the 60° the pillar planner
+    # is allowed to ask for.
+    steer = int(max(-PILLAR_MAX_STEER_DEG, min(PILLAR_MAX_STEER_DEG, capped)))
     return AvoidancePlan(steer_angle=steer, speed_scale=speed_scale,
                           wall_nudge_deg=wall_nudge, wall_side=warned_side)
 

@@ -117,3 +117,53 @@ SPEED_SCALE_WALL_CRITICAL = 0.5
 # runtime.py's _post_event_effects to turn perception/corner_detection.py's
 # per-corner events into a real lap count.
 CORNERS_PER_LAP = 4
+
+# Total laps required to finish either challenge (rules doc, section 6/7).
+TARGET_LAPS = 3
+
+# ---------------------------------------------------- challenge separation
+# WRO FE allows exactly ONE start button (rules doc, section 5), so the car
+# can't be told which challenge it's running -- it has to work it out itself.
+# The rule Hermes uses: a red/green traffic-sign pillar is UNIQUE to the
+# Obstacle Challenge (the Open Challenge mat has none), so the first pillar
+# ever seen latches challenge_mode = "OBSTACLE" (runtime.py's
+# _post_event_effects). If a full lap is completed without ever seeing one,
+# it's latched "OPEN" instead. See RobotContext.challenge_mode.
+#
+# Number of completed corners after which, if no pillar has been seen, the
+# run is declared OPEN. One full lap (CORNERS_PER_LAP) is the natural point:
+# by then any obstacle-challenge run would almost certainly have shown a
+# pillar, and we still have two laps left to act on the OPEN decision
+# (inner-wall bias, perception gating).
+OPEN_DECISION_AFTER_CORNERS = CORNERS_PER_LAP
+
+# ---------------------------------------------------------- inner-wall bias
+# OPEN-challenge only: once we know the run direction (from the first corner
+# marker's colour) we also know which side the INNER wall is on -- CLOCKWISE
+# hugs the RIGHT wall, COUNTER_CLOCKWISE the LEFT. Biasing the lane-centering
+# target a little toward that inner wall makes the racing line tighter and,
+# more importantly, keeps the car reliably away from the outer wall on the
+# wide/variable open-challenge corridor. Obstacle runs are NEVER biased (the
+# car must stay centred to pass pillars on either side).
+#
+# Pixels of corridor-centre offset to add toward the inner wall. 0 disables
+# the bias entirely. Retune on the mat with LANE_DEFAULT_HALF_WIDTH_PX.
+INNER_WALL_BIAS_PX = 45
+
+# ------------------------------------------------------------- start delay
+# Seconds to stay stopped in FOLLOW_TRACK after START_BUTTON_PRESSED before
+# the car actually rolls, so the person pressing the button can withdraw
+# their hand first (a real, if minor, WRO scoring/interference concern).
+# runtime.py enforces this; drive_command stays a pure state->command map.
+# Set to 0.0 to launch instantly.
+START_MOVE_DELAY_S = 0.75
+
+# ---------------------------------------------------------- open finish
+# OPEN challenge has no magenta parking lot to aim at -- the finish line is
+# just a POSITION on the start straight (rules doc: "on the extension of the
+# starting line"). After the 3rd lap completes the car enters FINAL_APPROACH
+# and drives straight for this long to clear the finish line, then stops.
+# Purely time-based because there is no encoder/odometry on this platform
+# (only IMU + side ToF) -- retune on the mat so the car halts just inside the
+# start section.
+FINAL_APPROACH_OPEN_DURATION_S = 1.2

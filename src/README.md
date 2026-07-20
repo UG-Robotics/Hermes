@@ -17,17 +17,16 @@ This directory intentionally contains ONLY software directly related to the oper
 
 In practice, that includes the live monitoring dashboard, state-machine logic, testing assets, and the embedded controller firmware alongside the main autonomy loop.
 
-The following are intentionally excluded from this folder:
+The following are intentionally kept out of the runtime path:
 
-* simulation environments
-* Gazebo projects
-* MATLAB models
-* testing notebooks
 * CAD files
-* documentation assets
+* documentation assets (kept in the repo-root folders)
 * temporary experiments
 
-Those components are stored outside this directory for clarity and maintainability.
+Development-only tooling that *does* live under `src/` is clearly separated
+from the runtime stack: `simulation/` (Gazebo world + MATLAB vision notes) and
+`testing/` are for the bench, not the competition loop, and nothing in the
+autonomy path imports them.
 
 ---
 
@@ -72,7 +71,8 @@ The ESP32 acts as the low-level controller:
 ```text
 src/
 │
-├── main.py
+├── main.py                 # CLI entry point / mode dispatcher
+├── runtime.py              # the orchestrator: the 20 Hz control loop
 │
 ├── perception/
 ├── state_machine/
@@ -83,6 +83,7 @@ src/
 ├── monitoring/
 ├── testing/
 ├── firmware/
+├── simulation/             # Gazebo / MATLAB assets (dev only, not runtime)
 ├── utils/
 └── config/
 ```
@@ -93,36 +94,43 @@ src/
 
 ## `main.py`
 
-Main runtime execution loop for the robot.
+The thin command-line front door. It parses `--mode` and hardware flags
+(`--real` / `--sim`) and hands off to the right runner:
 
-Responsibilities:
+* `run` — real hardware, the competition entry point (default)
+* `sim` — the same loop against a simulated ESP32 + synthetic camera
+* `dashboard` — launch the live monitoring web UI
+* `scenario` — replay a scripted event scenario headless
+* `test` — run the unittest suite
 
-* initialize all subsystems
-* initialize sensors
-* initialize serial communication
-* initialize state machine
-* execute main control loop
-* coordinate perception, planning, and control
+`main.py` holds no business logic — it only wires up a `Runtime` (or a
+scenario/test runner) and starts it.
 
-The main runtime loop follows the architecture:
+## `runtime.py`
+
+The actual orchestrator. `Runtime` builds every subsystem (real or simulated),
+then runs one control cycle per tick at ~20 Hz:
 
 ```text
-capture sensor data
+ingest ESP32 telemetry (IMU / ToF)      ← _drain_incoming
     ↓
-generate events
+perceive (camera → pillar/lane/corner/parking events)   ← _update_vision
     ↓
-update state machine
+update state machine (drain queued events)   ← _drain_events
     ↓
-compute motion targets
+decide drive intent (state → speed/steer/action)   ← _resolve_command
     ↓
-run controllers
+IMU heading-hold PID correction
     ↓
-send commands to MCU
+send CMD packet to ESP32
+    ↓
+publish a telemetry snapshot for the dashboard
 ```
 
-`main.py` should remain lightweight and orchestration-focused.
-
-Business logic should NOT be implemented directly inside `main.py`.
+It is also where run-level behaviour lives that isn't any single subsystem's
+job: challenge auto-detection (OPEN vs OBSTACLE), lap counting, the start
+delay, the open-run finish timer, and driving the parking maneuver. Keep
+per-subsystem logic in the modules below; `runtime.py` only coordinates them.
 
 ---
 
@@ -151,12 +159,13 @@ This module processes camera and sensor data to generate meaningful observations
 
 ```text
 perception/
-├── camera.py
-├── preprocessing.py
-├── roi.py
-├── track_detection.py
-├── pillar_detection.py
-└── finish_detection.py
+├── camera.py            # real (Picamera2/OpenCV) + synthetic frame source
+├── preprocessing.py     # thin compatibility wrapper over pillar detection
+├── roi.py               # region-of-interest crop helpers
+├── track_detection.py   # wall/corridor detection (lane centering)
+├── pillar_detection.py  # red/green traffic-sign pillars + pass-side
+├── corner_detection.py  # orange/blue corner markers → lap + direction
+└── finish_detection.py  # magenta parking-zone marker
 ```
 
 ## Notes
@@ -195,11 +204,13 @@ This module determines:
 
 ```text
 state_machine/
-├── states.py
-├── transitions.py
-├── events.py
-├── priorities.py
-└── manager.py
+├── states.py         # the State enum
+├── transitions.py    # (state, event) → next state table
+├── events.py         # EventType enum + priority map + Event/make_event
+├── priorities.py     # Priority levels
+├── event_queue.py    # thread-safe priority queue (drain per tick)
+├── robot_context.py  # shared run state (laps, direction, challenge_mode, …)
+└── manager.py        # applies events, gates INIT on camera/serial readiness
 ```
 
 ## Example States
@@ -411,13 +422,26 @@ communication/
 └── packet_parser.py
 ```
 
-## Example Commands
+## Wire Protocol
+
+Every line is a self-identifying, comma-delimited packet (see
+`protocol.py` / `packet_parser.py`).
+
+Pi → ESP32:
 
 ```text
-SPEED,40
-STEER,-12
-STOP
-MODE,1
+CMD,<speed>,<steer>,<ACTION>,<mode>   e.g. CMD,150,-12,FORWARD,0
+EMG,<mode>                            emergency stop (bypasses CMD parsing)
+PING                                  liveness check
+```
+
+ESP32 → Pi:
+
+```text
+TEL,ax,ay,az,gx,gy,gz,tof1_mm,tof2_mm   sensor telemetry (~20 Hz)
+STATUS,<message>                        boot / error text
+EVT,<name>                              hardware event, e.g. START_BUTTON_PRESSED
+ACK[,tag]                               acknowledgement
 ```
 
 ## Notes
@@ -716,10 +740,11 @@ Centralizing parameters improves:
 
 ```text
 config/
-├── pid_config.py
-├── thresholds.py
-├── camera_config.py
-└── robot_config.py
+├── pid_config.py       # heading-hold PID gains + servo slew
+├── thresholds.py       # lane/ToF/speed/lap/challenge/start-delay constants
+├── camera_config.py    # resolution + HSV colour ranges + blob/distance
+├── parking_config.py   # parallel-parking maneuver timings + geometry
+└── robot_config.py     # serial, speeds, steering limits, pins, keymap
 ```
 
 ## Notes
@@ -727,6 +752,9 @@ config/
 Magic numbers should NEVER be hardcoded throughout the codebase.
 
 Configuration values should be stored here whenever possible.
+
+The full on-mat tuning procedure for these constants lives in
+[`CALIBRATION.md`](CALIBRATION.md).
 
 ---
 

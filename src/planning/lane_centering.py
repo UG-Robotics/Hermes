@@ -32,7 +32,8 @@ from config.thresholds import (
 )
 
 
-def compute_heading_nudge(observation: LaneObservation, frame_width: int) -> float:
+def compute_heading_nudge(observation: LaneObservation, frame_width: int,
+                          bias_px: float = 0.0) -> float:
     """Return a small heading-correction nudge in degrees (+ = turn right),
     or 0.0 if this observation isn't trustworthy enough to act on.
 
@@ -40,11 +41,20 @@ def compute_heading_nudge(observation: LaneObservation, frame_width: int) -> flo
     future width-normalised gains) to keep this function's signature
     self-describing at call sites, mirroring
     perception.pillar_detection.compute_steer_angle(frame_width, blob).
+
+    bias_px shifts the corridor-centre target the car aims to hold, in the
+    same +right/-left pixel convention as offset_px. runtime.py uses it to
+    hug the INNER wall during the OPEN challenge (+ = bias toward the right
+    wall, - = toward the left); 0.0 (the default) is pure centre-hold, which
+    is what the Obstacle Challenge always uses so the car can pass pillars on
+    either side. See config/thresholds.py's INNER_WALL_BIAS_PX.
     """
     if not observation.valid or observation.confidence < LANE_MIN_CONFIDENCE:
         return 0.0
 
-    offset = observation.offset_px
+    # A positive bias means "sit further right of corridor centre", i.e. act
+    # as though the corridor centre were bias_px further right than measured.
+    offset = observation.offset_px + bias_px
     if abs(offset) <= LANE_OFFSET_DEADBAND_PX:
         return 0.0
 

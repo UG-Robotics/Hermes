@@ -85,11 +85,16 @@ def drive_command(state: State, context: RobotContext) -> tuple[int, int, str]:
         logger.debug("[DRIVE] FINAL_APPROACH → slow forward")
 
     elif state == State.PARK:
-        # Placeholder: parking maneuver logic goes here
-        speed = SPEED_DEFAULT_BACKWARD
+        # The real PARK behaviour is the staged parallel-park maneuver in
+        # planning/parking_planner.py, driven directly by runtime._resolve_parking
+        # (it needs per-tick dt + IMU heading + side ToF, which this pure
+        # state->command map deliberately doesn't take). drive_command is only
+        # reached for PARK if something bypasses the runtime path, so the safe
+        # fallback here is a full STOP -- never an open-loop reverse.
+        speed = SPEED_STOP
         steer = 0
-        action = "BACKWARD"
-        logger.debug("[DRIVE] PARK → reversing into spot")
+        action = "STOP"
+        logger.debug("[DRIVE] PARK → STOP (maneuver handled by runtime)")
 
     elif state in (State.STOP, State.ERROR, State.INIT, State.WAIT_FOR_START):
         speed = SPEED_STOP

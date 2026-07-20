@@ -52,6 +52,16 @@ class RobotContext:
     corners_passed: int = 0
     race_direction: str | None = None
 
+    # Which challenge this run is (auto-detected -- WRO FE allows only one
+    # start button, so the car can't be told). None until decided;
+    # "OBSTACLE" the instant a red/green pillar is seen; "OPEN" if a full lap
+    # is completed without any pillar. See config/thresholds.py's challenge
+    # separation notes and runtime.py's _post_event_effects.
+    challenge_mode: str | None = None
+    # Latches True the first time any pillar is detected this run -- the
+    # signal challenge_mode == "OBSTACLE" is derived from.
+    pillar_ever_seen: bool = False
+
     parking_detected: bool = False
     parking_complete: bool = False
 
@@ -138,6 +148,9 @@ class RobotContext:
 
         self.corners_passed = 0
         self.race_direction = None
+
+        self.challenge_mode = None
+        self.pillar_ever_seen = False
 
         self.parking_detected = False
         self.parking_complete = False
