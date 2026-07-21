@@ -56,6 +56,14 @@ class KeyboardOverrideListener:
         self._manual_mode_active = False
         self._pressed_keys = set()
         self._key_counts = {}
+        # Press recency: char -> monotonically increasing sequence number, set
+        # on every press. get_manual_target() uses it to resolve opposing keys
+        # (a vs d, w vs s) by "last key wins" so a new direction takes over
+        # instantly instead of cancelling the old one to a centred stop. Stale
+        # entries for released keys are harmless -- resolution only consults
+        # keys that are currently in _pressed_keys.
+        self._press_seq = {}
+        self._press_counter = 0
         self._listener = None
         self._stdin_thread = None
         self._stdin_stop = threading.Event()
@@ -111,6 +119,8 @@ class KeyboardOverrideListener:
             elif char in (KEY_FORWARD, KEY_BACKWARD, KEY_LEFT, KEY_RIGHT):
                 self._pressed_keys.add(char)
                 self._key_counts[char] = self._key_counts.get(char, 0) + 1
+                self._press_counter += 1
+                self._press_seq[char] = self._press_counter
                 logger.info(f"[MANUAL] key down: '{char}'")
 
     def _on_release(self, key):
@@ -253,16 +263,33 @@ class KeyboardOverrideListener:
             s = KEY_BACKWARD in self._pressed_keys
             a = KEY_LEFT in self._pressed_keys
             d = KEY_RIGHT in self._pressed_keys
+            seq = dict(self._press_seq)  # stable snapshot for the checks below
+
+            # "Last key wins" for opposing keys, so a new command takes over the
+            # instant it's pressed instead of both cancelling to a centred stop.
+            # This is what makes a->d (and w->s) flip smoothly with no dead-zone,
+            # in every input path: a terminal (where keys latch with no release)
+            # and a desktop hold-to-steer session alike. When only one of a pair
+            # is held it wins outright; the recency check only matters when both
+            # are held at once.
+            def _wins(k1, k2):
+                return seq.get(k1, 0) >= seq.get(k2, 0)
 
         steer = 0
-        if a and not d:
+        if a and d:
+            steer = -STEER_MANUAL_DEGREE if _wins(KEY_LEFT, KEY_RIGHT) else STEER_MANUAL_DEGREE
+        elif a:
             steer = -STEER_MANUAL_DEGREE
-        elif d and not a:
+        elif d:
             steer = STEER_MANUAL_DEGREE
 
-        if w and not s:
+        if w and s:
+            if _wins(KEY_FORWARD, KEY_BACKWARD):
+                return SPEED_DEFAULT_FORWARD, steer, "FORWARD"
+            return SPEED_DEFAULT_BACKWARD, steer, "BACKWARD"
+        if w:
             return SPEED_DEFAULT_FORWARD, steer, "FORWARD"
-        if s and not w:
+        if s:
             return SPEED_DEFAULT_BACKWARD, steer, "BACKWARD"
         # No drive key held: hold position but still allow the wheels to steer
         # so the operator can pre-aim before moving.

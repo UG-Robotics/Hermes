@@ -30,8 +30,9 @@ from utils.logger import get_logger
 from utils.telemetry_hub import get_hub
 from config.robot_config import SERIAL_PORT, BAUD_RATE, SERIAL_TIMEOUT
 
-from communication.protocol import serialize_command, get_emergency_packet
+from communication.protocol import get_emergency_packet
 from communication.serial_link import SerialLink
+from communication.command_dispatcher import CommandDispatcher
 from communication.packet_parser import parse_incoming
 
 from control.drive_command import drive_command
@@ -132,6 +133,16 @@ class Runtime:
                 self.listener.start()
             except Exception as e:
                 logger.warning(f"Keyboard listener unavailable: {e}")
+
+        # --- command dispatch -------------------------------------------------
+        # Drive commands leave the Pi on their own thread so a slow vision tick
+        # can't delay them, and manual input is streamed live at the dispatch
+        # rate (keyboard -> wheels no longer waits for the 20 Hz loop). This is
+        # the ONLY writer of drive commands to the link: tick() submits the
+        # autonomous command, the dispatcher sends. See
+        # communication/command_dispatcher.py.
+        self.dispatcher = CommandDispatcher(self.link, manual_source=self._manual_command_source)
+        self.dispatcher.start()
 
         # --- decision core ------------------------------------------------
         # camera_ready/serial_ok gate the INIT -> WAIT_FOR_START transition
@@ -575,6 +586,19 @@ class Runtime:
                 self._handle_hardware_event(parsed.get("name", ""))
 
     # =================================================================== driving
+    def _manual_command_source(self):
+        """Live manual target for the CommandDispatcher.
+
+        Returns the operator's current (speed, steer, action) while manual mode
+        is active, else None so the dispatcher falls back to the autonomous
+        command tick() last submitted. Called from the dispatcher thread; both
+        listener methods take the listener's own lock, so this is safe to call
+        concurrently with tick()'s own read of the same state.
+        """
+        if self.listener and self.listener.is_manual_mode_active():
+            return self.listener.get_manual_target()
+        return None
+
     def _resolve_command(self, dt: float):
         """Return (speed, steer, action, mode_flag) from manual or autonomous.
 
@@ -735,12 +759,15 @@ class Runtime:
 
         # 7) SEND to the ESP32 (real or virtual) -- step (v) of the pillar
         #    pipeline and the output of the IMU heading-hold loop both land
-        #    here, on the wire, identically to any other steer command. This
-        #    tick's response to what we just ingested will be picked up by
-        #    _drain_incoming() at the top of the NEXT tick, not this one --
-        #    the Pi never blocks waiting for an immediate reply.
-        packet = serialize_command(speed, steer, action, mode_flag)
-        self.link.send(packet)
+        #    here. We don't write the wire directly: we hand the command to the
+        #    CommandDispatcher, which streams the latest command to the ESP32 on
+        #    its own thread so a slow vision frame this tick can't delay it, and
+        #    which streams live manual input at its own rate. In manual mode the
+        #    dispatcher uses that live input rather than this submission; this
+        #    submission is what it sends in autonomous mode. Either way the Pi
+        #    never blocks on the write, and this tick's response is picked up by
+        #    _drain_incoming() at the top of the NEXT tick, not this one.
+        self.dispatcher.submit(speed, steer, action, mode_flag)
 
         # One tidy status record the dashboard renders as the "current state".
         # tof_left_mm/right_mm were already refreshed this tick by
@@ -855,6 +882,13 @@ class Runtime:
     def shutdown(self) -> None:
         logger.warning("Triggering safety shutdown.")
         self._running = False
+        # Stop the dispatcher FIRST: it must not stream a normal CMD after the
+        # emergency stop below, because a fresh CMD clears the ESP32's emergency
+        # latch (esp_controller.ino) and would let the car move again.
+        try:
+            self.dispatcher.stop()
+        except Exception as e:
+            logger.error(f"Dispatcher stop failed: {e}")
         try:
             self.link.send_emergency(get_emergency_packet(mode=1))
         except Exception as e:
