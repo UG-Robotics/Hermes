@@ -77,7 +77,7 @@ bool initTOF() {
     tofLeft.setTimeout(500);
     leftHealthy = tofLeft.init();
     if (leftHealthy) {
-        leftHealthy = tofLeft.setAddress(TOF_LEFT_I2C_ADDRESS);
+        tofLeft.setAddress(TOF_LEFT_I2C_ADDRESS);
     }
     if (leftHealthy) {
         tofLeft.setDistanceMode(VL53L1X::Long);
