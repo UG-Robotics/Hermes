@@ -1,72 +1,22 @@
-
-// #include <Wire.h>
-
-// // Change these if your SDA/SCL pins are different
-// #define SDA_PIN 21
-// #define SCL_PIN 22
-
-// void setup() {
-//   Serial.begin(115200);
-//   delay(1000);
-
-//   Wire.begin(SDA_PIN, SCL_PIN);
-
-//   Serial.println();
-//   Serial.println("=================================");
-//   Serial.println("ESP32 I2C Scanner");
-//   Serial.println("=================================");
-// }
-
-// void loop() {
-//   byte count = 0;
-
-//   Serial.println("\nScanning...");
-
-//   for (byte address = 1; address < 127; address++) {
-
-//     Wire.beginTransmission(address);
-//     byte error = Wire.endTransmission();
-
-//     if (error == 0) {
-//       Serial.print("Found device at 0x");
-//       if (address < 16) Serial.print("0");
-//       Serial.println(address, HEX);
-//       count++;
-//     }
-//     else if (error == 4) {
-//       Serial.print("Unknown error at 0x");
-//       if (address < 16) Serial.print("0");
-//       Serial.println(address, HEX);
-//     }
-//   }
-
-//   if (count == 0) {
-//     Serial.println("No I2C devices found.");
-//   } else {
-//     Serial.print("Found ");
-//     Serial.print(count);
-//     Serial.println(" device(s).");
-//   }
-
-//   Serial.println("-------------------------");
-//   delay(3000);
-// }
-
 #include <Wire.h>
-#include <Adafruit_VL53L0X.h>
+#include <Adafruit_VL53L1X.h>
 
+// I2C bus pins (ESP32 defaults).
 #define SDA_PIN 21
 #define SCL_PIN 22
 
-#define LEFT_XSHUT   32
-#define RIGHT_XSHUT  33
+// Time-of-flight sensor shutdown (XSHUT) pin.
+#define XSHUT_PIN 32
 
-#define DEFAULT_ADDR 0x29
-#define LEFT_ADDR    0x30
-#define RIGHT_ADDR   0x29
+// Address the sensor is re-assigned to, off its 0x29 power-on default so it
+// won't collide with a second sensor sharing this bus. begin(SENSOR_ADDR)
+// moves the sensor onto this address during bring-up (see setup()).
+#define SENSOR_ADDR 0x30
 
-Adafruit_VL53L0X leftSensor;
-Adafruit_VL53L0X rightSensor;
+// Passing XSHUT_PIN to the constructor lets begin() pulse it to hardware-reset
+// the sensor before re-addressing it.
+Adafruit_VL53L1X sensor = Adafruit_VL53L1X(XSHUT_PIN);
+bool sensorOK = false;
 
 void scanI2C() {
   byte count = 0;
@@ -81,7 +31,9 @@ void scanI2C() {
     if (error == 0) {
       Serial.print("Found device at 0x");
       if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
+      Serial.print(address, HEX);
+      if (address == SENSOR_ADDR) Serial.print("  <- VL53L1X");
+      Serial.println();
       count++;
     }
   }
@@ -98,41 +50,43 @@ void scanI2C() {
 void setup() {
   Serial.begin(115200);
   Wire.begin(SDA_PIN, SCL_PIN);
-
-  pinMode(LEFT_XSHUT, OUTPUT);
-  pinMode(RIGHT_XSHUT, OUTPUT);
-
-  // Turn both sensors off
-  digitalWrite(LEFT_XSHUT, LOW);
-  digitalWrite(RIGHT_XSHUT, LOW);
   delay(100);
 
-  // ---------------- LEFT ----------------
-  digitalWrite(LEFT_XSHUT, HIGH);
-  delay(20);
-
-  if (leftSensor.begin(DEFAULT_ADDR, false, &Wire)) {
-    if (leftSensor.setAddress(LEFT_ADDR))
-      Serial.println("LEFT initialized -> 0x30");
-    else
-      Serial.println("LEFT address change FAILED");
+  // begin(SENSOR_ADDR, &Wire) resets the sensor via XSHUT_PIN, then moves it
+  // off the 0x29 default onto SENSOR_ADDR and initialises it there.
+  if (sensor.begin(SENSOR_ADDR, &Wire)) {
+    Serial.print("VL53L1X initialized, re-addressed to 0x");
+    Serial.println(SENSOR_ADDR, HEX);
+    sensor.setTimingBudget(50);
+    if (sensor.startRanging()) {
+      sensorOK = true;
+      Serial.println("Ranging started.");
+    } else {
+      Serial.print("startRanging() failed, status = ");
+      Serial.println(sensor.vl_status);
+    }
   } else {
-    Serial.println("LEFT init FAILED");
+    Serial.print("VL53L1X init FAILED, status = ");
+    Serial.println(sensor.vl_status);
   }
-
-  // ---------------- RIGHT ----------------
-  digitalWrite(RIGHT_XSHUT, HIGH);
-  delay(20);
-
-  if (rightSensor.begin(DEFAULT_ADDR, false, &Wire))
-    Serial.println("RIGHT initialized -> 0x29");
-  else
-    Serial.println("RIGHT init FAILED");
-
-  delay(100);
-
-  scanI2C();
 }
 
 void loop() {
+  if (sensorOK && sensor.dataReady()) {
+    int16_t dist = sensor.distance();
+    if (dist == -1) {
+      Serial.print("Range error, status = ");
+      Serial.println(sensor.vl_status);
+    } else {
+      Serial.print("Distance @0x");
+      Serial.print(SENSOR_ADDR, HEX);
+      Serial.print(": ");
+      Serial.print(dist);
+      Serial.println(" mm");
+    }
+    sensor.clearInterrupt();
+  }
+
+  scanI2C();
+  delay(1000);
 }
