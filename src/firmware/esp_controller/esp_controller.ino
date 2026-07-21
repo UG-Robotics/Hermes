@@ -18,29 +18,53 @@ namespace
 
     void applyCommand(const RobotCommand &command)
     {
+        // Motor: STOP (and any non-drive action) means "don't drive"; only
+        // FORWARD/BACKWARD move the wheels. Steering is handled AFTER this,
+        // unconditionally, so it applies to STOP too (see below).
         if (command.action == "STOP")
         {
             setMotorSpeed(0);
-            setSteeringAngle(SERVO_CENTER);
-            return;
+        }
+        else
+        {
+            int motorSpeed = speedToMotorDuty(command);
+            if (command.action == "BACKWARD")
+            {
+                motorSpeed = -motorSpeed;
+            }
+            else if (command.action != "FORWARD")
+            {
+                motorSpeed = 0;
+            }
+            setMotorSpeed(motorSpeed);
         }
 
-        int motorSpeed = speedToMotorDuty(command);
-        if (command.action == "BACKWARD")
-        {
-            motorSpeed = -motorSpeed;
-        }
-        else if (command.action != "FORWARD")
-        {
-            motorSpeed = 0;
-        }
-
-        setMotorSpeed(motorSpeed);
+        // Steering runs for EVERY action, STOP included. The Pi sends a real
+        // steer value alongside a STOP when the operator holds a/d without a
+        // drive key ("pre-aim the wheels before moving" -- see the Pi's
+        // hardware/buttons.py get_manual_target). Forcing SERVO_CENTER on STOP
+        // here would throw that away and the wheels would never turn until a
+        // drive key was also held. (Emergency stop still hard-centers via the
+        // emergencyActive() branch in loop(), which does not call this.)
+        //
         // NOTE: this is the ONE place a steer value crosses from the wire
         // protocol into the physical servo. Whatever the Pi sent -- whether
         // that's raw manual input or the output of the IMU heading-hold PID
         // (control/steering_control.py) -- lands here identically.
-        setSteeringAngle(map(constrain(command.steer, -90, 90), -90, 90, SERVO_LEFT, SERVO_RIGHT));
+        //
+        // The Pi sends an abstract steer in [-90, +90] (+ = right, - = left);
+        // we map it to physical servo degrees. Mapping is PIECEWISE around
+        // SERVO_CENTER instead of a single map(LEFT..RIGHT) because the
+        // steering geometry is asymmetric (SERVO_CENTER is NOT the midpoint of
+        // SERVO_LEFT/SERVO_RIGHT). A single linear map would put steer=0 at the
+        // midpoint, biasing "straight ahead" off the calibrated center; the
+        // split makes steer=0 land exactly on SERVO_CENTER and lets each side
+        // use its own travel.
+        int steerCmd = constrain(command.steer, -90, 90);
+        int servoAngle = (steerCmd <= 0)
+            ? map(steerCmd, -90, 0, SERVO_LEFT, SERVO_CENTER)
+            : map(steerCmd,   0, 90, SERVO_CENTER, SERVO_RIGHT);
+        setSteeringAngle(servoAngle);
     }
 }
 

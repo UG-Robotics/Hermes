@@ -138,13 +138,40 @@ class Camera:
         kind, dev = self._impl
         try:
             if kind == "picamera2":
+                # Picamera2's "RGB888" main stream hands capture_array() the
+                # channels already in R,G,B order -- the contract every
+                # perception module (COLOR_RGB2HSV) and the synthetic path
+                # (PIL RGB) rely on. Returned as-is; the ONE consumer that
+                # wants BGR (the JPEG encoder) re-orders in _real_jpeg().
                 return dev.capture_array()
             if kind == "opencv":
                 ok, frame = dev.read()
-                return frame if ok else None
+                if not ok:
+                    return None
+                # OpenCV's VideoCapture is natively BGR -- flip to the RGB
+                # contract above so a USB-webcam fallback feeds perception the
+                # same channel order Picamera2/synthetic do (otherwise red and
+                # green pillars swap and colour detection silently inverts).
+                return self._swap_rb(frame)
         except Exception as e:
             logger.error(f"Camera capture failed: {e}")
         return None
+
+    @staticmethod
+    def _swap_rb(arr):
+        """Reverse the channel axis (RGB<->BGR). Same op both directions, so
+        one helper serves the OpenCV BGR->RGB ingest and the _real_jpeg()
+        RGB->BGR encode. Returns a contiguous array (cv2 needs contiguous)."""
+        if arr is None or not _NUMPY or arr.ndim != 3:
+            return arr
+        if arr.shape[2] == 3:
+            return np.ascontiguousarray(arr[:, :, ::-1])
+        if arr.shape[2] == 4:
+            # RGBA/XRGB: swap R and B, leave the 4th channel untouched.
+            out = arr.copy()
+            out[:, :, [0, 2]] = arr[:, :, [2, 0]]
+            return out
+        return arr
 
     def close(self) -> None:
         if self._impl is None:
@@ -160,12 +187,16 @@ class Camera:
 
     # ---------------------------------------------------------------- encoding
     def _real_jpeg(self) -> bytes:
-        frame = self.get_frame()
+        frame = self.get_frame()  # RGB, per get_frame()'s contract
         if frame is None:
             return self._synthetic_jpeg()
         try:
             import cv2  # type: ignore
-            ok, buf = cv2.imencode(".jpg", frame)
+            # cv2.imencode() interprets its input as BGR. get_frame() hands us
+            # RGB, so flip R<->B first -- without this the encoded stream has
+            # red and blue swapped, which shows up as the pink/magenta cast
+            # over the whole dashboard image.
+            ok, buf = cv2.imencode(".jpg", self._swap_rb(frame))
             if ok:
                 return buf.tobytes()
         except Exception:
