@@ -70,8 +70,11 @@ namespace
 
 void setup() {
     initSerial();
-    initMotor();
+    // Servo BEFORE motor: initServo() reserves its own LEDC timer (see
+    // servo_control.cpp) so the motor's ledcAttach() can't share/reconfigure
+    // the timer driving the 50 Hz servo frame and skew its center.
     initServo();
+    initMotor();
     initStartButton();
     initIMU(); // failure is non-fatal: readIMU() falls back to level/stationary
                // defaults and the STATUS,ERR line already told the Pi why.

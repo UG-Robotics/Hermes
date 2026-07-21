@@ -159,7 +159,19 @@ void handleCommand(String input) {
         return;
     }
 
-    // Single-letter commands
+    // Single-letter commands. Require length == 1 so a stray multi-char line
+    // (most notably the Pi<->ESP32 wire protocol's "CMD,150,0,FORWARD,1" --
+    // see serial_protocol.cpp -- which starts with 'C') can't be misread as a
+    // one-letter command just because its first character happens to match.
+    // This bites if the Pi is still connected/running while this standalone
+    // sketch is flashed: its periodic CMD packets would otherwise silently
+    // trigger repeated "capture center" instead of being ignored as noise.
+    if (input.length() != 1) {
+        Serial.print("Ignored (not a calibration command): ");
+        Serial.println(input);
+        return;
+    }
+
     switch (c) {
         case 'c': case 'C':
             centerAngle = currentAngle;
@@ -206,3 +218,42 @@ void loop() {
         handleCommand(input);
     }
 }
+
+
+// #include <Arduino.h>
+// #include <ESP32Servo.h>
+
+// Servo steeringServo;
+
+// constexpr int SERVO_PIN = 14;
+
+// void setup() {
+//     Serial.begin(115200);
+
+//     steeringServo.setPeriodHertz(50);
+//     steeringServo.attach(SERVO_PIN, 500, 2500);
+
+//     Serial.println("Stepping through servo angles...");
+// }
+
+// void loop() {
+//     // 0 -> 180
+//     for (int angle = 0; angle <= 180; angle += 10) {
+//         steeringServo.write(angle);
+//         Serial.print("Angle: ");
+//         Serial.println(angle);
+//         delay(1000);    // Hold for 1 second
+//     }
+
+//     delay(2000);
+
+//     // 180 -> 0
+//     for (int angle = 180; angle >= 0; angle -= 10) {
+//         steeringServo.write(angle);
+//         Serial.print("Angle: ");
+//         Serial.println(angle);
+//         delay(1000);
+//     }
+
+//     delay(2000);
+// }

@@ -138,20 +138,21 @@ class Camera:
         kind, dev = self._impl
         try:
             if kind == "picamera2":
-                # Picamera2's "RGB888" main stream hands capture_array() the
-                # channels already in R,G,B order -- the contract every
-                # perception module (COLOR_RGB2HSV) and the synthetic path
-                # (PIL RGB) rely on. Returned as-is; the ONE consumer that
-                # wants BGR (the JPEG encoder) re-orders in _real_jpeg().
-                return dev.capture_array()
+                # Despite the "RGB888" format name, Picamera2's capture_array()
+                # returns the channels in B,G,R order (the format name refers to
+                # libcamera's memory byte order, which comes out reversed as a
+                # numpy array). Flip B<->R to the RGB contract every perception
+                # module (COLOR_RGB2HSV) and the synthetic path (PIL RGB) rely
+                # on. Without this, red and blue are swapped -- red pillars read
+                # as blue in the stream AND colour detection misfires.
+                return self._swap_rb(dev.capture_array())
             if kind == "opencv":
                 ok, frame = dev.read()
                 if not ok:
                     return None
-                # OpenCV's VideoCapture is natively BGR -- flip to the RGB
-                # contract above so a USB-webcam fallback feeds perception the
-                # same channel order Picamera2/synthetic do (otherwise red and
-                # green pillars swap and colour detection silently inverts).
+                # OpenCV's VideoCapture is natively BGR too -- same flip to the
+                # RGB contract so a USB-webcam fallback feeds perception the same
+                # channel order Picamera2/synthetic do.
                 return self._swap_rb(frame)
         except Exception as e:
             logger.error(f"Camera capture failed: {e}")
