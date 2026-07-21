@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "skytech-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/neame/Downloads/skytech", "run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

@@ -31,7 +31,7 @@ laptop with no robot attached** (simulated ESP32 + synthetic camera) for
 development and testing.
 
 **Core hardware:** Raspberry Pi 4 · ESP32 · Pi Camera · LSM6DSO 6-axis IMU ·
-2× VL53L0X time-of-flight sensors · N20 gear-motor with L298N driver ·
+2× VL53L1X time-of-flight sensors · N20 gear-motor with L298N driver ·
 steering servo (Ackermann) · 18650 Li-ion pack + buck converter. See
 [`components/`](components/) and [`schemes/`](schemes/) for parts and wiring.
 

@@ -2,7 +2,7 @@
 
 #include "robot_data.h"
 
-// Dual VL53L0X time-of-flight distance sensor driver.
+// Dual VL53L1X time-of-flight distance sensor driver.
 //
 // OWNERSHIP: both ToF sensors are physical hardware wired to the ESP32
 // (config.h: PIN_TOF_LEFT_XSHUT/PIN_TOF_RIGHT_XSHUT, shared I2C bus with the
@@ -16,8 +16,7 @@
 // physical wiring ever ends up mirrored, fix it in readTOF() below, not on
 // the Pi side.
 //
-// Requires the "Adafruit VL53L0X" library (Library Manager) and its
-// "Adafruit BusIO" dependency.
+// Requires the "VL53L1X" library by Pololu (Library Manager).
 
 bool initTOF();                          // false if either sensor fails to come up on I2C
 void readTOF(RobotTelemetry &telemetry); // fills tof1_mm (left) / tof2_mm (right)

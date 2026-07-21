@@ -1,20 +1,20 @@
 // #include <Wire.h>
-// #include <Adafruit_VL53L0X.h>
+// #include <VL53L1X.h>
 
 // // pins
 // #define SDA_PIN 21
 // #define SCL_PIN 22
 
-// #define LEFT_XSHUT 32
+// #define LEFT_XSHUT 35
 // #define RIGHT_XSHUT 33
 
-// // addresses
+// // addresses (7-bit). 0x29 is the sensor's power-on default.
 // #define DEFAULT_ADDR 0x29
 // #define LEFT_ADDR    0x30
 // #define RIGHT_ADDR   0x29
 
-// Adafruit_VL53L0X leftSensor;
-// Adafruit_VL53L0X rightSensor;
+// VL53L1X leftSensor;
+// VL53L1X rightSensor;
 
 // bool leftOK = false;
 // bool rightOK = false;
@@ -23,6 +23,7 @@
 //     Serial.begin(115200);
 
 //     Wire.begin(SDA_PIN, SCL_PIN);
+//     Wire.setClock(400000);
 
 //     pinMode(LEFT_XSHUT, OUTPUT);
 //     pinMode(RIGHT_XSHUT, OUTPUT);
@@ -36,28 +37,35 @@
 //     digitalWrite(LEFT_XSHUT, HIGH);
 //     delay(20);
 
-//     if (leftSensor.begin(DEFAULT_ADDR, false, &Wire)) {
+//     leftSensor.setTimeout(500);
+//     if (leftSensor.init()) {
 
-//         if (leftSensor.setAddress(LEFT_ADDR)) {
-//             leftOK = true;
-//             Serial.println("LEFT OK");
-//         } else {
-//             Serial.println("LEFT address failed");
-//         }
+//         leftSensor.setAddress(LEFT_ADDR);
+//         leftSensor.setDistanceMode(VL53L1X::Long);
+//         leftSensor.setMeasurementTimingBudget(50000);
+//         leftSensor.startContinuous(50);
+//         leftOK = true;
+//         Serial.println("LEFT OK");
 
 //     } else {
-//         Serial.println("LEFT init failed");
+//         Serial.println("LEFT init failed (timed out talking to sensor -- check wiring/power/address)");
 //     }
 
 //     // right
 //     digitalWrite(RIGHT_XSHUT, HIGH);
 //     delay(20);
 
-//     if (rightSensor.begin(RIGHT_ADDR, false, &Wire)) {
+//     rightSensor.setTimeout(500);
+//     if (rightSensor.init()) {
+
+//         rightSensor.setDistanceMode(VL53L1X::Long);
+//         rightSensor.setMeasurementTimingBudget(50000);
+//         rightSensor.startContinuous(50);
 //         rightOK = true;
 //         Serial.println("RIGHT OK");
+
 //     } else {
-//         Serial.println("RIGHT init failed");
+//         Serial.println("RIGHT init failed (timed out talking to sensor -- check wiring/power/address)");
 //     }
 
 //     Serial.println();
@@ -70,15 +78,13 @@
 //     // left
 //     if (leftOK) {
 
-//         VL53L0X_RangingMeasurementData_t measure;
-//         leftSensor.rangingTest(&measure, false);
-
+//         uint16_t dist = leftSensor.read();
 //         Serial.print("LEFT : ");
 
-//         if (measure.RangeStatus == 4) {
-//             Serial.print("OUT OF RANGE");
+//         if (leftSensor.timeoutOccurred()) {
+//             Serial.print("TIMEOUT");
 //         } else {
-//             Serial.print(measure.RangeMilliMeter);
+//             Serial.print(dist);
 //             Serial.print(" mm");
 //         }
 
@@ -93,15 +99,13 @@
 //     // right
 //     if (rightOK) {
 
-//         VL53L0X_RangingMeasurementData_t measure;
-//         rightSensor.rangingTest(&measure, false);
-
+//         uint16_t dist = rightSensor.read();
 //         Serial.print("RIGHT : ");
 
-//         if (measure.RangeStatus == 4) {
-//             Serial.print("OUT OF RANGE");
+//         if (rightSensor.timeoutOccurred()) {
+//             Serial.print("TIMEOUT");
 //         } else {
-//             Serial.print(measure.RangeMilliMeter);
+//             Serial.print(dist);
 //             Serial.print(" mm");
 //         }
 
@@ -117,54 +121,64 @@
 // }
 
 #include <Wire.h>
+#include <VL53L1X.h>
 
-// Change these if your SDA/SCL pins are different
+// I2C pins
 #define SDA_PIN 21
 #define SCL_PIN 22
 
+#define TOF_ADDR 0x29
+
+VL53L1X tof;
+bool sensorOK = false;
+
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
+    Serial.begin(115200);
 
-  Wire.begin(SDA_PIN, SCL_PIN);
+    Wire.begin(SDA_PIN, SCL_PIN);
+    Wire.setClock(400000);
 
-  Serial.println();
-  Serial.println("=================================");
-  Serial.println("ESP32 I2C Scanner");
-  Serial.println("=================================");
+    Serial.println("Initializing VL53L1X...");
+
+    // Pololu's init() honors this timeout instead of blocking forever if the
+    // sensor never ACKs on I2C (bad wiring/power/address).
+    tof.setTimeout(500);
+
+    if (tof.init()) {
+        sensorOK = true;
+        tof.setDistanceMode(VL53L1X::Long);
+        tof.setMeasurementTimingBudget(50000);
+        tof.startContinuous(50);
+        Serial.println("TOF OK");
+    } else {
+        Serial.println("TOF init failed (timed out talking to sensor -- check wiring/power/address)");
+    }
+
+    Serial.println();
+    Serial.println("Starting measurements...");
+    Serial.println();
 }
 
 void loop() {
-  byte count = 0;
 
-  Serial.println("\nScanning...");
+    if (sensorOK) {
 
-  for (byte address = 1; address < 127; address++) {
+        uint16_t dist = tof.read();
 
-    Wire.beginTransmission(address);
-    byte error = Wire.endTransmission();
+        Serial.print("Distance: ");
 
-    if (error == 0) {
-      Serial.print("Found device at 0x");
-      if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
-      count++;
+        if (tof.timeoutOccurred()) {
+            Serial.println("TIMEOUT");
+        } else {
+            Serial.print(dist);
+            Serial.println(" mm");
+        }
+
+    } else {
+
+        Serial.println("TOF NOT DETECTED");
+
     }
-    else if (error == 4) {
-      Serial.print("Unknown error at 0x");
-      if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
-    }
-  }
 
-  if (count == 0) {
-    Serial.println("No I2C devices found.");
-  } else {
-    Serial.print("Found ");
-    Serial.print(count);
-    Serial.println(" device(s).");
-  }
-
-  Serial.println("-------------------------");
-  delay(3000);
+    delay(200);
 }

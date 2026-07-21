@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_VL53L0X.h>
+#include <VL53L1X.h>
 
 #include "tof.h"
 #include "config.h"
 
 // -----------------------------------------------------------------------
-// Two VL53L0X sensors share the same I2C bus as the IMU (config.h:
-// I2C_SDA_PIN/I2C_SCL_PIN). Every VL53L0X boots at the same fixed address
+// Two VL53L1X sensors share the same I2C bus as the IMU (config.h:
+// I2C_SDA_PIN/I2C_SCL_PIN). Every VL53L1X boots at the same fixed address
 // (0x29) with no hardware address-select pin, so bringing up a second one
 // on the same bus needs the standard XSHUT re-addressing sequence:
 //
@@ -22,10 +22,15 @@
 // brings the shared bus up (Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN)) and is
 // called first in esp_controller.ino's setup(), so this file just reuses
 // that bus.
+//
+// Each sensor's init() carries its own setTimeout() (see initTOF()), so a
+// wiring fault on ONE sensor can only cost that sensor's timeout window --
+// it can't hang the other sensor's bring-up or block esp_controller.ino's
+// setup() indefinitely.
 // -----------------------------------------------------------------------
 namespace {
-    Adafruit_VL53L0X tofLeft = Adafruit_VL53L0X();
-    Adafruit_VL53L0X tofRight = Adafruit_VL53L0X();
+    VL53L1X tofLeft;
+    VL53L1X tofRight;
 
     bool leftHealthy = false;
     bool rightHealthy = false;
@@ -45,16 +50,14 @@ namespace {
     float lastRightMm = OUT_OF_RANGE_MM;
 
     // Reads one sensor. Returns true and fills `outMm` on a valid range;
-    // false (leaving `outMm` untouched) on a failed/out-of-range read so
-    // the caller can decide whether to hold the last value.
-    bool readOne(Adafruit_VL53L0X &sensor, float &outMm) {
-        VL53L0X_RangingMeasurementData_t measure;
-        sensor.rangingTest(&measure, false);
-        // RangeStatus == 4 is VL53L0X's "phase failure" / out-of-range code.
-        if (measure.RangeStatus == 4) {
+    // false (leaving `outMm` untouched) on a failed/timed-out/out-of-range
+    // read so the caller can decide whether to hold the last value.
+    bool readOne(VL53L1X &sensor, float &outMm) {
+        uint16_t dist = sensor.read();
+        if (sensor.timeoutOccurred() || dist == 0 || dist > 2000) {
             return false;
         }
-        outMm = (float)measure.RangeMilliMeter;
+        outMm = (float)dist;
         return true;
     }
 }
@@ -71,19 +74,29 @@ bool initTOF() {
     // Step 2: bring up LEFT alone at the default address, then re-address it.
     digitalWrite(PIN_TOF_LEFT_XSHUT, HIGH);
     delay(10);
-    leftHealthy = tofLeft.begin(TOF_DEFAULT_I2C_ADDRESS, false, &Wire);
+    tofLeft.setTimeout(500);
+    leftHealthy = tofLeft.init();
     if (leftHealthy) {
         leftHealthy = tofLeft.setAddress(TOF_LEFT_I2C_ADDRESS);
     }
-    if (!leftHealthy) {
+    if (leftHealthy) {
+        tofLeft.setDistanceMode(VL53L1X::Long);
+        tofLeft.setMeasurementTimingBudget(50000);
+        tofLeft.startContinuous(50);
+    } else {
         Serial.println("STATUS,ERR ToF LEFT: init/address failed");
     }
 
     // Step 3: bring up RIGHT at the now-vacated default address.
     digitalWrite(PIN_TOF_RIGHT_XSHUT, HIGH);
     delay(10);
-    rightHealthy = tofRight.begin(TOF_RIGHT_I2C_ADDRESS, false, &Wire);
-    if (!rightHealthy) {
+    tofRight.setTimeout(500);
+    rightHealthy = tofRight.init();
+    if (rightHealthy) {
+        tofRight.setDistanceMode(VL53L1X::Long);
+        tofRight.setMeasurementTimingBudget(50000);
+        tofRight.startContinuous(50);
+    } else {
         Serial.println("STATUS,ERR ToF RIGHT: init failed");
     }
 
