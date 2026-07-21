@@ -105,8 +105,18 @@ void loop() {
     updateMotor();
     updateServo();
 
-    RobotTelemetry telemetry;
-    readIMU(telemetry); // fills ax..gz
-    readTOF(telemetry); // fills tof1_mm (left) / tof2_mm (right)
-    sendTelemetry(telemetry);
+    // Telemetry on a fixed cadence (TELEMETRY_INTERVAL) rather than every loop.
+    // Command handling above still runs at full loop speed for responsiveness;
+    // only the sensor read + TEL send are rate-limited, so the TEL line paces
+    // itself instead of saturating the serial link.
+    static unsigned long lastTelemetryMs = 0;
+    unsigned long nowMs = millis();
+    if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL) {
+        lastTelemetryMs = nowMs;
+
+        RobotTelemetry telemetry;
+        readIMU(telemetry); // fills ax..gz
+        readTOF(telemetry); // fills tof1_mm (left) / tof2_mm (right)
+        sendTelemetry(telemetry);
+    }
 }

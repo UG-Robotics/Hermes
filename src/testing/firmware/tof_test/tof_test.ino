@@ -1,127 +1,20 @@
-// #include <Wire.h>
-// #include <VL53L1X.h>
-
-// // pins
-// #define SDA_PIN 21
-// #define SCL_PIN 22
-
-// #define LEFT_XSHUT 35
-// #define RIGHT_XSHUT 33
-
-// // addresses (7-bit). 0x29 is the sensor's power-on default.
-// #define DEFAULT_ADDR 0x29
-// #define LEFT_ADDR    0x30
-// #define RIGHT_ADDR   0x29
-
-// VL53L1X leftSensor;
-// VL53L1X rightSensor;
-
-// bool leftOK = false;
-// bool rightOK = false;
-
-// void setup() {
-//     Serial.begin(115200);
-
-//     Wire.begin(SDA_PIN, SCL_PIN);
-//     Wire.setClock(400000);
-
-//     pinMode(LEFT_XSHUT, OUTPUT);
-//     pinMode(RIGHT_XSHUT, OUTPUT);
-
-//     // Hold both off
-//     digitalWrite(LEFT_XSHUT, LOW);
-//     digitalWrite(RIGHT_XSHUT, LOW);
-//     delay(100);
-
-//     // left
-//     digitalWrite(LEFT_XSHUT, HIGH);
-//     delay(20);
-
-//     leftSensor.setTimeout(500);
-//     if (leftSensor.init()) {
-
-//         leftSensor.setAddress(LEFT_ADDR);
-//         leftSensor.setDistanceMode(VL53L1X::Long);
-//         leftSensor.setMeasurementTimingBudget(50000);
-//         leftSensor.startContinuous(50);
-//         leftOK = true;
-//         Serial.println("LEFT OK");
-
-//     } else {
-//         Serial.println("LEFT init failed (timed out talking to sensor -- check wiring/power/address)");
-//     }
-
-//     // right
-//     digitalWrite(RIGHT_XSHUT, HIGH);
-//     delay(20);
-
-//     rightSensor.setTimeout(500);
-//     if (rightSensor.init()) {
-
-//         rightSensor.setDistanceMode(VL53L1X::Long);
-//         rightSensor.setMeasurementTimingBudget(50000);
-//         rightSensor.startContinuous(50);
-//         rightOK = true;
-//         Serial.println("RIGHT OK");
-
-//     } else {
-//         Serial.println("RIGHT init failed (timed out talking to sensor -- check wiring/power/address)");
-//     }
-
-//     Serial.println();
-//     Serial.println("Starting measurements...");
-//     Serial.println();
-// }
-
-// void loop() {
-
-//     // left
-//     if (leftOK) {
-
-//         uint16_t dist = leftSensor.read();
-//         Serial.print("LEFT : ");
-
-//         if (leftSensor.timeoutOccurred()) {
-//             Serial.print("TIMEOUT");
-//         } else {
-//             Serial.print(dist);
-//             Serial.print(" mm");
-//         }
-
-//     } else {
-
-//         Serial.print("LEFT : NOT DETECTED");
-
-//     }
-
-//     Serial.print("     ");
-
-//     // right
-//     if (rightOK) {
-
-//         uint16_t dist = rightSensor.read();
-//         Serial.print("RIGHT : ");
-
-//         if (rightSensor.timeoutOccurred()) {
-//             Serial.print("TIMEOUT");
-//         } else {
-//             Serial.print(dist);
-//             Serial.print(" mm");
-//         }
-
-//     } else {
-
-//         Serial.print("RIGHT : NOT DETECTED");
-
-//     }
-
-//     Serial.println();
-
-//     delay(200);
-// }
+// Single-sensor VL53L1X bring-up test, using the Adafruit_VL53L1X library
+// (ST's official driver underneath). We use this instead of the Pololu VL53L1X
+// library because Pololu's init() divides by a calibration value it reads from
+// the sensor and, on this sensor, that value comes back 0 -> IntegerDivideByZero
+// -> ESP32 crash. Adafruit's begin() returns a clean status code instead.
+//
+// Correct Adafruit_VL53L1X API (NOT the Pololu one):
+//   vl53.begin(addr, &Wire)   -> bool
+//   vl53.startRanging()       -> bool
+//   vl53.setTimingBudget(ms)  -> 15/20/33/50/100/200/500
+//   vl53.dataReady()          -> bool
+//   vl53.distance()           -> int16_t mm, -1 on error
+//   vl53.clearInterrupt()
+//   vl53.vl_status            -> last status code
 
 #include <Wire.h>
-#include <VL53L1X.h>
+#include <Adafruit_VL53L1X.h>
 
 // I2C pins
 #define SDA_PIN 21
@@ -129,29 +22,80 @@
 
 #define TOF_ADDR 0x29
 
-VL53L1X tof;
+// No XSHUT / IRQ pin wired for this single-sensor test.
+Adafruit_VL53L1X vl53 = Adafruit_VL53L1X();
 bool sensorOK = false;
+
+// Reads a 16-bit big-endian register straight over I2C (no library), so we can
+// SEE what the sensor reports. Returns 0xFFFF if the sensor doesn't even ACK.
+uint16_t readReg16(uint8_t addr, uint16_t reg) {
+    Wire.beginTransmission(addr);
+    Wire.write((uint8_t)(reg >> 8));
+    Wire.write((uint8_t)(reg & 0xFF));
+    if (Wire.endTransmission() != 0) {
+        return 0xFFFF;  // no ACK -- sensor not on the bus
+    }
+    Wire.requestFrom(addr, (uint8_t)2);
+    if (Wire.available() < 2) {
+        return 0xFFFF;
+    }
+    uint16_t hi = Wire.read();
+    uint16_t lo = Wire.read();
+    return (hi << 8) | lo;
+}
 
 void setup() {
     Serial.begin(115200);
 
     Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(400000);
+    // 100 kHz (standard mode). Bump up only once everything is stable.
+    Wire.setClock(100000);
 
-    Serial.println("Initializing VL53L1X...");
+    // Let the sensor's firmware finish booting before we touch it.
+    delay(100);
 
-    // Pololu's init() honors this timeout instead of blocking forever if the
-    // sensor never ACKs on I2C (bad wiring/power/address).
-    tof.setTimeout(500);
+    Serial.println("Initializing VL53L1X (Adafruit library)...");
 
-    if (tof.init()) {
-        sensorOK = true;
-        tof.setDistanceMode(VL53L1X::Long);
-        tof.setMeasurementTimingBudget(50000);
-        tof.startContinuous(50);
-        Serial.println("TOF OK");
+    // Direct probe first: IDENTIFICATION__MODEL_ID (0x010F) reads 0xEACC on a
+    // healthy VL53L1X. RETRY it, because a single probe can miss a sensor that
+    // boots slowly on a cold power-up or has a marginal connection. If it reads
+    // 0xEACC on ANY attempt, the sensor is reachable; if all attempts read
+    // 0xFFFF, it is genuinely not answering -> physical wiring/power, not code.
+    const int MAX_PROBES = 20;
+    uint16_t modelId = 0xFFFF;
+    for (int attempt = 1; attempt <= MAX_PROBES; attempt++) {
+        modelId = readReg16(TOF_ADDR, 0x010F);
+        Serial.print("  probe ");
+        Serial.print(attempt);
+        Serial.print("/");
+        Serial.print(MAX_PROBES);
+        Serial.print(": Model ID @0x29 = 0x");
+        Serial.println(modelId, HEX);
+        if (modelId == 0xEACC) {
+            break;  // sensor answered -- stop retrying
+        }
+        delay(200);
+    }
+
+    if (modelId != 0xEACC) {
+        Serial.println("Sensor never ACKed after all retries -- it is not reliably on the bus. "
+                        "This is wiring/power, not software: reseat VIN/GND/SDA/SCL, reflow the "
+                        "breakout header, and check VIN is a steady 3.3V. Skipping begin().");
+    } else if (!vl53.begin(TOF_ADDR, &Wire)) {
+        Serial.print("begin() failed, status = ");
+        Serial.println(vl53.vl_status);
+        Serial.println("Sensor answered its address but ST init did not complete -- "
+                        "likely a clone/blank-calibration board or unstable power.");
     } else {
-        Serial.println("TOF init failed (timed out talking to sensor -- check wiring/power/address)");
+        Serial.println("VL53L1X begin() OK.");
+        vl53.setTimingBudget(50);
+        if (vl53.startRanging()) {
+            sensorOK = true;
+            Serial.println("Ranging started.");
+        } else {
+            Serial.print("startRanging() failed, status = ");
+            Serial.println(vl53.vl_status);
+        }
     }
 
     Serial.println();
@@ -160,25 +104,24 @@ void setup() {
 }
 
 void loop() {
+    if (!sensorOK) {
+        Serial.println("TOF NOT DETECTED");
+        delay(500);
+        return;
+    }
 
-    if (sensorOK) {
-
-        uint16_t dist = tof.read();
-
-        Serial.print("Distance: ");
-
-        if (tof.timeoutOccurred()) {
-            Serial.println("TIMEOUT");
+    if (vl53.dataReady()) {
+        int16_t dist = vl53.distance();
+        if (dist == -1) {
+            Serial.print("Range error, status = ");
+            Serial.println(vl53.vl_status);
         } else {
+            Serial.print("Distance: ");
             Serial.print(dist);
             Serial.println(" mm");
         }
-
-    } else {
-
-        Serial.println("TOF NOT DETECTED");
-
+        vl53.clearInterrupt();
     }
 
-    delay(200);
+    delay(50);
 }

@@ -82,7 +82,10 @@ namespace
         latestCommand.valid = true;
         newCommandFlag = true;
         emergencyFlag = false; // a fresh normal CMD clears a prior emergency latch
-        sendStatus("CMD RX speed=" + String(latestCommand.speed) + " steer=" + String(latestCommand.steer) + " action=" + latestCommand.action + " mode=" + String(latestCommand.mode));
+        // NB: do NOT echo every CMD back as STATUS here. The Pi streams a CMD
+        // per tick (~20 Hz), and echoing 2 STATUS lines per CMD floods the
+        // serial TX so hard it starves the TEL telemetry line (and can back up
+        // the loop). Keep the wire quiet; errors below still report.
     }
 
     void handleEmg(String fields[], size_t n)
@@ -138,12 +141,10 @@ namespace
 
         if (tag == "CMD")
         {
-            sendStatus("RX CMD line");
             handleCmd(fields, n);
         }
         else if (tag == "EMG")
         {
-            sendStatus("RX EMG line");
             handleEmg(fields, n);
         }
         else if (tag == "EVT")
