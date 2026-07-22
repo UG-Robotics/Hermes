@@ -1,31 +1,37 @@
 {
   "name": "full_match",
-  "description": "A complete WRO run: start, avoid obstacles, complete three laps, then park.",
+  "description": "Realistic WRO Future Engineers match with three laps, obstacle avoidance, and final parking.",
   "events": [
-    {"at": 0.5, "event": "START_BUTTON_PRESSED"},
+    { "at": 0.5,  "event": "START_BUTTON_PRESSED" },
 
-    {"at": 2.0, "event": "PILLAR_DETECTED_RED"},
-    {"at": 3.5, "event": "OBSTACLE_CLEARED"},
+    { "at": 5.8,  "event": "PILLAR_DETECTED_RED" },
+    { "at": 8.1,  "event": "OBSTACLE_CLEARED" },
 
-    {"at": 5.0, "event": "PILLAR_DETECTED_GREEN"},
-    {"at": 6.5, "event": "OBSTACLE_CLEARED"},
+    { "at": 14.7, "event": "PILLAR_DETECTED_GREEN" },
+    { "at": 17.2, "event": "OBSTACLE_CLEARED" },
 
-    {"at": 8.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 9.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 10.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 11.0, "event": "LAP_MARKER_DETECTED"},
+    { "at": 24.0, "event": "LAP_MARKER_DETECTED" },
+    { "at": 24.4, "event": "LAP_MARKER_DETECTED" },
 
-    {"at": 12.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 13.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 14.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 15.0, "event": "LAP_MARKER_DETECTED"},
+    { "at": 30.2, "event": "PILLAR_DETECTED_GREEN" },
+    { "at": 32.7, "event": "OBSTACLE_CLEARED" },
 
-    {"at": 16.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 17.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 18.0, "event": "LAP_MARKER_DETECTED"},
-    {"at": 19.0, "event": "LAP_MARKER_DETECTED"},
+    { "at": 39.4, "event": "PILLAR_DETECTED_RED" },
+    { "at": 41.8, "event": "OBSTACLE_CLEARED" },
 
-    {"at": 21.0, "event": "PARKING_ZONE_DETECTED"},
-    {"at": 23.0, "event": "PARKING_COMPLETE"}
+    { "at": 48.5, "event": "LAP_MARKER_DETECTED" },
+    { "at": 48.9, "event": "LAP_MARKER_DETECTED" },
+
+    { "at": 55.6, "event": "PILLAR_DETECTED_RED" },
+    { "at": 58.1, "event": "OBSTACLE_CLEARED" },
+
+    { "at": 64.8, "event": "PILLAR_DETECTED_GREEN" },
+    { "at": 67.2, "event": "OBSTACLE_CLEARED" },
+
+    { "at": 74.0, "event": "LAP_MARKER_DETECTED" },
+    { "at": 74.4, "event": "LAP_MARKER_DETECTED" },
+
+    { "at": 82.0, "event": "PARKING_ZONE_DETECTED" },
+    { "at": 87.5, "event": "PARKING_COMPLETE" }
   ]
 }

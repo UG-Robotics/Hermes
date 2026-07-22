@@ -14,8 +14,17 @@ const int IMU_SAMPLE_RATE_HZ = 104;
 // dance: hold both in reset, bring the LEFT sensor up alone and re-address
 // it off 0x29, THEN bring the RIGHT sensor up (which is free to stay at
 // the now-vacated default). See firmware/esp_controller/tof.cpp.
-const int PIN_TOF_LEFT_XSHUT = 35;
-const int PIN_TOF_RIGHT_XSHUT = 33;
+//
+// Pins match the known-good dual-sensor bench test
+// (testing/firmware/tof_test/tof_test.ino): the sensor brought up FIRST and
+// re-addressed to 0x30 is on GPIO34 (== LEFT here), and the one that stays at
+// the 0x29 default is on GPIO32 (== RIGHT). NOTE: GPIO34 is input-only, but
+// that's fine for LEFT specifically -- it's powered up first and never has to
+// be held OFF while another sensor sits at 0x29 (RIGHT, on the output-capable
+// GPIO32, is the one held in reset during LEFT's re-addressing). Do NOT put the
+// RIGHT sensor on an input-only pin -- it must actually be driven low.
+const int PIN_TOF_LEFT_XSHUT = 34;   // -> 0x30, brought up first (input-only ok, see above)
+const int PIN_TOF_RIGHT_XSHUT = 32;  // -> 0x29, must be output-capable (held in reset first)
 const int TOF_DEFAULT_I2C_ADDRESS = 0x29;   // VL53L1X power-on default
 const int TOF_LEFT_I2C_ADDRESS = 0x30;      // re-addressed at boot, see tof.cpp
 const int TOF_RIGHT_I2C_ADDRESS = TOF_DEFAULT_I2C_ADDRESS;

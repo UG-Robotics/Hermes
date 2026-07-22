@@ -53,7 +53,13 @@
 // }
 
 #include <Wire.h>
-#include <Adafruit_VL53L0X.h>
+#include <Adafruit_VL53L1X.h>
+
+// Adafruit_VL53L1X (ST's official driver), NOT Adafruit_VL53L0X -- our
+// hardware is the VL53L1X. VL53L0X's API doesn't match: begin() takes
+// (addr, bool, TwoWire*) and has a separate setAddress(); VL53L1X's begin()
+// takes (addr, TwoWire*) and does the address reassignment ITSELF as part of
+// that call -- there is no separate setAddress() method on this class.
 
 #define SDA_PIN 21
 #define SCL_PIN 22
@@ -65,8 +71,35 @@
 #define LEFT_ADDR    0x30
 #define RIGHT_ADDR   0x29
 
-Adafruit_VL53L0X leftSensor;
-Adafruit_VL53L0X rightSensor;
+Adafruit_VL53L1X leftSensor;
+Adafruit_VL53L1X rightSensor;
+
+// Adafruit's begin() has NO internal timeout -- if a sensor never reaches the
+// "boot ready" state it expects, begin() blocks FOREVER, which is why a dead
+// RIGHT sensor previously hung the sketch right after LEFT succeeded and
+// nothing after that line ever printed. So: probe the raw ID register first
+// (bounded retries) and only call begin() if something actually answers.
+// Returns true if the sensor ACKs with the correct VL53L1X model ID.
+bool probePresent(const char *label, uint8_t addr, int retries = 10) {
+  for (int i = 1; i <= retries; i++) {
+    Wire.beginTransmission(addr);
+    Wire.write((uint8_t)0x01);  // IDENTIFICATION__MODEL_ID high byte (0x010F)
+    Wire.write((uint8_t)0x0F);
+    if (Wire.endTransmission() == 0) {
+      Wire.requestFrom(addr, (uint8_t)2);
+      if (Wire.available() >= 2) {
+        uint16_t id = (Wire.read() << 8) | Wire.read();
+        if (id == 0xEACC) {
+          return true;
+        }
+      }
+    }
+    delay(50);
+  }
+  Serial.print(label);
+  Serial.println(": not detected after retries -- skipping begin() so it can't hang.");
+  return false;
+}
 
 void scanI2C() {
   byte count = 0;
@@ -108,26 +141,35 @@ void setup() {
   delay(100);
 
   // ---------------- LEFT ----------------
+  // Only LEFT is awake right now (RIGHT is still held in XSHUT reset), so
+  // begin(LEFT_ADDR, &Wire) finds it at the sensor's power-on default (0x29)
+  // and reassigns it to LEFT_ADDR as part of this same call.
   digitalWrite(LEFT_XSHUT, HIGH);
-  delay(20);
+  delay(100);  // let firmware boot before we probe
 
-  if (leftSensor.begin(DEFAULT_ADDR, false, &Wire)) {
-    if (leftSensor.setAddress(LEFT_ADDR))
+  if (probePresent("LEFT", DEFAULT_ADDR)) {
+    if (leftSensor.begin(LEFT_ADDR, &Wire)) {
       Serial.println("LEFT initialized -> 0x30");
-    else
-      Serial.println("LEFT address change FAILED");
-  } else {
-    Serial.println("LEFT init FAILED");
+    } else {
+      Serial.print("LEFT init FAILED, status = ");
+      Serial.println(leftSensor.vl_status);
+    }
   }
 
   // ---------------- RIGHT ----------------
+  // LEFT has already moved off 0x29 (or was skipped), so RIGHT can come up at
+  // the default. Runs REGARDLESS of what happened to LEFT.
   digitalWrite(RIGHT_XSHUT, HIGH);
-  delay(20);
+  delay(100);
 
-  if (rightSensor.begin(DEFAULT_ADDR, false, &Wire))
-    Serial.println("RIGHT initialized -> 0x29");
-  else
-    Serial.println("RIGHT init FAILED");
+  if (probePresent("RIGHT", DEFAULT_ADDR)) {
+    if (rightSensor.begin(RIGHT_ADDR, &Wire)) {
+      Serial.println("RIGHT initialized -> 0x29");
+    } else {
+      Serial.print("RIGHT init FAILED, status = ");
+      Serial.println(rightSensor.vl_status);
+    }
+  }
 
   delay(100);
 

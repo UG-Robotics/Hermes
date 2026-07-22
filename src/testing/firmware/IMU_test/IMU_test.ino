@@ -34,7 +34,7 @@ void loop() {
   lsm6ds.getEvent(&accel, &gyro, &temp);
 
   // Clear previous table
-  Serial.print("\033[2J\033[H");
+  Serial.print("");
 
   Serial.println("==============================================");
   Serial.println("            LSM6DSOX LIVE READINGS");

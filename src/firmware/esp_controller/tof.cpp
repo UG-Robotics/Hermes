@@ -50,10 +50,21 @@ namespace {
     float lastRightMm = OUT_OF_RANGE_MM;
 
     // Reads one sensor. Returns true and fills `outMm` on a valid range;
-    // false (leaving `outMm` untouched) on a failed/timed-out/out-of-range
+    // false (leaving `outMm` untouched) on a no-sample/failed/out-of-range
     // read so the caller can decide whether to hold the last value.
+    //
+    // NON-BLOCKING, unlike the bench test's plain read(): we only read when a
+    // continuous sample is actually ready. With startContinuous(50) producing a
+    // sample every ~50ms and readTOF() gated to TELEMETRY_INTERVAL (100ms), a
+    // sample is normally always ready, so this reads every cycle exactly like
+    // the test does -- but if a sensor STOPS producing (fault/disconnect), this
+    // returns immediately instead of blocking the whole control loop up to the
+    // 500ms setTimeout() on every telemetry cycle.
     bool readOne(VL53L1X &sensor, float &outMm) {
-        uint16_t dist = sensor.read();
+        if (!sensor.dataReady()) {
+            return false;  // no fresh sample this tick -- hold last, never block
+        }
+        uint16_t dist = sensor.read();  // sample ready -> returns without blocking
         if (sensor.timeoutOccurred() || dist == 0 || dist > 2000) {
             return false;
         }
