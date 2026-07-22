@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 import random
+import threading
 import time
 
 from utils.logger import get_logger
@@ -46,6 +47,12 @@ class SimulatedESP32:
     def __init__(self, noise: float = 0.02):
         self._hub = get_hub()
         self._noise = noise
+
+        # The CommandDispatcher thread now calls write_line() while the control
+        # loop calls read_line(); both touch command/physics state, so guard
+        # them. Command re-sends are value-identical, so this only prevents a
+        # torn read, never changes the simulated motion.
+        self._io_lock = threading.Lock()
 
         # --- command state (what the "firmware" was last told to do) ----------
         self._action = "STOP"
@@ -77,37 +84,39 @@ class SimulatedESP32:
         parts = text.split(",")
         tag = parts[0].strip().upper()
 
-        if tag == "CMD" and len(parts) == 5:
-            self._speed = _safe_int(parts[1])
-            self._steer = _safe_int(parts[2])
-            self._action = parts[3].strip().upper()
-            self._emergency = False
-        elif tag == "EMG":
-            self._speed = 0
-            self._steer = 0
-            self._action = "STOP"
-            self._emergency = True
-            self._outbox.append("STATUS,EMG ack")
-        elif tag == "EVT" and len(parts) == 2:
-            name = parts[1].strip().upper()
-            if name == "START_BUTTON_PRESSED":
-                self._outbox.append("EVT,START_BUTTON_PRESSED")
+        with self._io_lock:
+            if tag == "CMD" and len(parts) == 5:
+                self._speed = _safe_int(parts[1])
+                self._steer = _safe_int(parts[2])
+                self._action = parts[3].strip().upper()
+                self._emergency = False
+            elif tag == "EMG":
+                self._speed = 0
+                self._steer = 0
+                self._action = "STOP"
+                self._emergency = True
+                self._outbox.append("STATUS,EMG ack")
+            elif tag == "EVT" and len(parts) == 2:
+                name = parts[1].strip().upper()
+                if name == "START_BUTTON_PRESSED":
+                    self._outbox.append("EVT,START_BUTTON_PRESSED")
+                else:
+                    self._outbox.append(f"STATUS,ERR unsupported EVT: {name}")
+            elif tag == "PING":
+                self._outbox.append("ACK,PING")
+            elif tag == "ACK":
+                pass  # Pi acknowledged something; nothing to do
             else:
-                self._outbox.append(f"STATUS,ERR unsupported EVT: {name}")
-        elif tag == "PING":
-            self._outbox.append("ACK,PING")
-        elif tag == "ACK":
-            pass  # Pi acknowledged something; nothing to do
-        else:
-            self._outbox.append(f"STATUS,ERR unknown packet: {text}")
+                self._outbox.append(f"STATUS,ERR unknown packet: {text}")
 
     # ================================================================ outbound
     def read_line(self):
         """Return one queued line for the Pi, or None. Mirrors a serial read."""
-        self._advance()
-        if self._outbox:
-            return self._outbox.pop(0)
-        return None
+        with self._io_lock:
+            self._advance()
+            if self._outbox:
+                return self._outbox.pop(0)
+            return None
 
     # ================================================================= physics
     def _advance(self) -> None:

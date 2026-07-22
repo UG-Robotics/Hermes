@@ -82,6 +82,8 @@
 #             except Exception as e:
 #                 logger.warning(f"Error closing serial port: {e}")
 
+import threading
+
 from utils.logger import get_logger
 from utils.telemetry_hub import get_hub
 
@@ -117,6 +119,11 @@ class SerialLink:
         # A SimulatedESP32-like object (write_line/read_line). When set, the
         # link is in SIMULATED mode and never touches pyserial.
         self.backend = backend
+        # Serialises writes so the CommandDispatcher thread and a shutdown
+        # emergency stop can never interleave bytes on the wire. Reads
+        # (read_line) run on the control-loop thread and are left unlocked --
+        # a UART is full-duplex, so one reader + one writer is safe.
+        self._write_lock = threading.Lock()
 
     @property
     def simulated(self) -> bool:
@@ -162,39 +169,47 @@ class SerialLink:
 
     def send(self, packet: str) -> bool:
         """Send a packet to the ESP32 (real, simulated or emulated)."""
-        hub.comms("tx", packet, mode=self._mode())
+        with self._write_lock:
+            hub.comms("tx", packet, mode=self._mode())
 
-        if self.simulated:
-            self.backend.write_line(packet)
-            return True
-
-        if self.is_open:
-            try:
-                self.ser.write(packet.encode('utf-8'))
-                self.ser.flush()
+            if self.simulated:
+                self.backend.write_line(packet)
                 return True
-            except Exception as serial_err:
-                logger.error(f"Serial write error: {serial_err}")
-                return False
 
-        logger.debug(f"[EMU TX] {packet.strip()}")
-        return False
+            if self.is_open:
+                try:
+                    self.ser.write(packet.encode('utf-8'))
+                    self.ser.flush()
+                    return True
+                except Exception as serial_err:
+                    logger.error(f"Serial write error: {serial_err}")
+                    return False
+
+            logger.debug(f"[EMU TX] {packet.strip()}")
+            return False
 
     def send_emergency(self, emergency_packet: str) -> None:
-        """Best-effort emergency stop write, used during shutdown."""
-        hub.comms("tx", emergency_packet, mode=self._mode(), emergency=True)
-        try:
-            if self.simulated:
-                self.backend.write_line(emergency_packet)
-                return
-            if self.is_open:
-                self.ser.write(emergency_packet.encode('utf-8'))
-                self.ser.flush()
-                self.ser.close()
-            else:
-                logger.warning(f"[EMU EMERGENCY TX] {emergency_packet.strip()}")
-        except Exception as fail_safe_err:
-            logger.critical(f"Fail-safe error: {fail_safe_err}")
+        """Best-effort emergency stop write, used during shutdown.
+
+        The caller must stop the CommandDispatcher BEFORE calling this, so no
+        normal CMD lands after the EMG (a fresh CMD clears the ESP32's
+        emergency latch). The write lock still guards against any in-flight
+        write racing this one.
+        """
+        with self._write_lock:
+            hub.comms("tx", emergency_packet, mode=self._mode(), emergency=True)
+            try:
+                if self.simulated:
+                    self.backend.write_line(emergency_packet)
+                    return
+                if self.is_open:
+                    self.ser.write(emergency_packet.encode('utf-8'))
+                    self.ser.flush()
+                    self.ser.close()
+                else:
+                    logger.warning(f"[EMU EMERGENCY TX] {emergency_packet.strip()}")
+            except Exception as fail_safe_err:
+                logger.critical(f"Fail-safe error: {fail_safe_err}")
 
     def read_line(self):
         """Read one line from the ESP32, or None if nothing is waiting.

@@ -1,57 +1,3 @@
-
-// #include <Wire.h>
-
-// // Change these if your SDA/SCL pins are different
-// #define SDA_PIN 21
-// #define SCL_PIN 22
-
-// void setup() {
-//   Serial.begin(115200);
-//   delay(1000);
-
-//   Wire.begin(SDA_PIN, SCL_PIN);
-
-//   Serial.println();
-//   Serial.println("=================================");
-//   Serial.println("ESP32 I2C Scanner");
-//   Serial.println("=================================");
-// }
-
-// void loop() {
-//   byte count = 0;
-
-//   Serial.println("\nScanning...");
-
-//   for (byte address = 1; address < 127; address++) {
-
-//     Wire.beginTransmission(address);
-//     byte error = Wire.endTransmission();
-
-//     if (error == 0) {
-//       Serial.print("Found device at 0x");
-//       if (address < 16) Serial.print("0");
-//       Serial.println(address, HEX);
-//       count++;
-//     }
-//     else if (error == 4) {
-//       Serial.print("Unknown error at 0x");
-//       if (address < 16) Serial.print("0");
-//       Serial.println(address, HEX);
-//     }
-//   }
-
-//   if (count == 0) {
-//     Serial.println("No I2C devices found.");
-//   } else {
-//     Serial.print("Found ");
-//     Serial.print(count);
-//     Serial.println(" device(s).");
-//   }
-
-//   Serial.println("-------------------------");
-//   delay(3000);
-// }
-
 #include <Wire.h>
 #include <Adafruit_VL53L1X.h>
 
@@ -61,15 +7,15 @@
 // takes (addr, TwoWire*) and does the address reassignment ITSELF as part of
 // that call -- there is no separate setAddress() method on this class.
 
+// I2C bus pins (ESP32 defaults).
 #define SDA_PIN 21
 #define SCL_PIN 22
 
-#define LEFT_XSHUT   32
-#define RIGHT_XSHUT  33
+// Time-of-flight sensor shutdown (XSHUT) pin.
+#define XSHUT_PIN 32
 
-#define DEFAULT_ADDR 0x29
-#define LEFT_ADDR    0x30
-#define RIGHT_ADDR   0x29
+#define DEFAULT_ADDR 0x29   // VL53L1X power-on address
+#define SENSOR_ADDR  0x30   // address we re-assign the sensor to
 
 Adafruit_VL53L1X leftSensor;
 Adafruit_VL53L1X rightSensor;
@@ -114,7 +60,9 @@ void scanI2C() {
     if (error == 0) {
       Serial.print("Found device at 0x");
       if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
+      Serial.print(address, HEX);
+      if (address == SENSOR_ADDR) Serial.print("  <- VL53L1X");
+      Serial.println();
       count++;
     }
   }
@@ -130,7 +78,11 @@ void scanI2C() {
 
 void setup() {
   Serial.begin(115200);
+  delay(500);  // let USB-serial come up so the banner below isn't missed
+  Serial.println("\n=== VL53L1X bring-up ===");
+
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(100000);
 
   pinMode(LEFT_XSHUT, OUTPUT);
   pinMode(RIGHT_XSHUT, OUTPUT);
@@ -177,4 +129,21 @@ void setup() {
 }
 
 void loop() {
+  if (sensorOK && sensor.dataReady()) {
+    int16_t dist = sensor.distance();
+    if (dist == -1) {
+      Serial.print("Range error, status = ");
+      Serial.println(sensor.vl_status);
+    } else {
+      Serial.print("Distance @0x");
+      Serial.print(SENSOR_ADDR, HEX);
+      Serial.print(": ");
+      Serial.print(dist);
+      Serial.println(" mm");
+    }
+    sensor.clearInterrupt();
+  }
+
+  scanI2C();
+  delay(1000);
 }
