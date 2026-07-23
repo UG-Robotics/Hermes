@@ -156,3 +156,19 @@ START_MOVE_DELAY_S = 0.75
 # (only IMU + side ToF) -- retune on the mat so the car halts just inside the
 # start section.
 FINAL_APPROACH_OPEN_DURATION_S = 1.2
+
+# ------------------------------------------------------ sensor-health warnings
+# runtime.py logs a WARNING (to logs/hermes.log + dashboard) when the ESP32's
+# telemetry that carries the IMU + ToF readings goes stale, and when the ToF
+# sensors stop producing valid ranges. Both are latched (one line down, one on
+# recovery) so a persistent fault doesn't spam at the loop rate.
+#
+# TELEMETRY_STALE_S: how long with NO new TEL packet before we call the whole
+# IMU+ToF stream dead. The ESP sends telemetry every TELEMETRY_INTERVAL (100ms
+# / ~10 Hz in config.h), so this is several missed packets, not a hiccup.
+TELEMETRY_STALE_S = 0.75
+# TOF_DEAD_S: how long BOTH ToF sensors must continuously read the out-of-range
+# sentinel (while telemetry is otherwise flowing) before we warn they've stopped
+# ranging. Sustained on purpose so briefly facing open space (both walls far)
+# doesn't trip it -- only sensors that actually dropped off the bus do.
+TOF_DEAD_S = 2.0

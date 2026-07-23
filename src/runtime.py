@@ -27,7 +27,7 @@ import time
 from typing import Optional
 
 from utils.logger import get_logger
-from utils.telemetry_hub import get_hub
+from utils.telemetry_hub import get_hub, CH_TELEMETRY
 from config.robot_config import SERIAL_PORT, BAUD_RATE, SERIAL_TIMEOUT
 
 from communication.protocol import get_emergency_packet
@@ -53,6 +53,7 @@ from planning.parking_planner import ParkingManeuver, park_side_for_direction
 from config.thresholds import (
     CORNERS_PER_LAP, OPEN_DECISION_AFTER_CORNERS, INNER_WALL_BIAS_MM,
     START_MOVE_DELAY_S, FINAL_APPROACH_OPEN_DURATION_S,
+    TELEMETRY_STALE_S, TOF_DEAD_S,
 )
 
 from hardware.buttons import KeyboardOverrideListener
@@ -172,6 +173,13 @@ class Runtime:
         self._parking_complete_raised = False
         self._finish_raised = False
 
+        # Sensor-health warning latches (see _check_sensor_health). Latched so a
+        # persistent fault logs one WARNING on the way down and one INFO on
+        # recovery, never once per tick.
+        self._telemetry_stale_warned = False   # whole IMU+ToF stream went stale
+        self._tof_dead_since: Optional[float] = None  # when both ToF first read sentinel
+        self._tof_dead_warned = False           # ToF-specific "no valid ranges"
+
         # The Pi has no way to know the IMU/ToF are alive except by actually
         # seeing a TEL packet arrive from the ESP32 -- a healthy serial link
         # only proves the ESP32 itself is talking, not that ITS sensors came
@@ -218,6 +226,64 @@ class Runtime:
         ctx = self.state_machine.context
         ctx.tof_left_mm = tof["left_mm"]
         ctx.tof_right_mm = tof["right_mm"]
+
+    # ==================================================== sensor-health warnings
+    def _check_sensor_health(self, now: float) -> None:
+        """Log a WARNING (to logs/hermes.log + the dashboard) when the ESP32
+        telemetry carrying the IMU + ToF readings stops arriving, and when the
+        ToF sensors stop producing valid ranges while telemetry still flows.
+
+        Both checks are latched: one WARNING when the fault appears, one INFO
+        when it clears -- so a stuck sensor never spams the log at the loop rate.
+        The IMU and both ToFs ride the same TEL packet, so a stale stream means
+        BOTH stopped; the ToF-specific check catches a ToF-only failure (sensors
+        dropped off the I2C bus) while the IMU is still fine.
+
+        Called from tick() right after _drain_incoming()/_refresh_tof_context(),
+        so it sees this tick's freshest telemetry and ToF context.
+        """
+        rec = self._hub.snapshot().get(CH_TELEMETRY)
+        stream_fresh = rec is not None and (now - rec.get("ts", now)) <= TELEMETRY_STALE_S
+
+        # --- whole IMU + ToF telemetry stream ---
+        if stream_fresh:
+            if self._telemetry_stale_warned:
+                logger.info("IMU+ToF telemetry recovered -- packets flowing again.")
+                self._telemetry_stale_warned = False
+        else:
+            if not self._telemetry_stale_warned:
+                if rec is None:
+                    logger.warning("No IMU/ToF telemetry from the ESP32 -- neither "
+                                   "sensor is sending values (check the serial link).")
+                else:
+                    age = now - rec.get("ts", now)
+                    logger.warning(f"IMU+ToF telemetry STALE: no TEL packet from the "
+                                   f"ESP32 for {age:.1f}s -- both sensors' values are frozen.")
+                self._telemetry_stale_warned = True
+            # Stream is dead -> the ToF-value check below is meaningless; reset it.
+            self._tof_dead_since = None
+            return
+
+        # --- ToF-specific: stream is fresh, but both sensors have read the
+        #     out-of-range sentinel for a sustained window -> they've stopped
+        #     ranging (likely off the I2C bus) even though the IMU is fine. ---
+        ctx = self.state_machine.context
+        both_out = (ctx.tof_left_mm >= ToFArray.OUT_OF_RANGE_MM and
+                    ctx.tof_right_mm >= ToFArray.OUT_OF_RANGE_MM)
+        if both_out:
+            if self._tof_dead_since is None:
+                self._tof_dead_since = now
+            elif (now - self._tof_dead_since) >= TOF_DEAD_S and not self._tof_dead_warned:
+                logger.warning(f"ToF: both sensors reading out-of-range "
+                               f"({ToFArray.OUT_OF_RANGE_MM:.0f}mm) for "
+                               f"{now - self._tof_dead_since:.1f}s -- no valid distances "
+                               "(sensors likely dropped off the I2C bus).")
+                self._tof_dead_warned = True
+        else:
+            if self._tof_dead_warned:
+                logger.info("ToF: valid distances again.")
+            self._tof_dead_since = None
+            self._tof_dead_warned = False
 
     # ============================================================ event inject
     def inject_event(self, event_type_name: str, source: str = "manual", metadata: Optional[dict] = None) -> bool:
@@ -678,6 +744,11 @@ class Runtime:
         #     stale one. See _refresh_tof_context()'s docstring.
         self._refresh_tof_context()
 
+        # 1c) HEALTH: warn (to logs/hermes.log) if the IMU+ToF telemetry stream
+        #     went stale, or the ToF sensors stopped ranging. Latched so it's one
+        #     line per fault, not one per tick. See _check_sensor_health().
+        self._check_sensor_health(now)
+
         # 2) PERCEIVE: look for pillars and raise events off real vision.
         self._update_vision()
 
@@ -838,6 +909,9 @@ class Runtime:
         self._final_approach_ts = None
         self._parking_complete_raised = False
         self._finish_raised = False
+        self._telemetry_stale_warned = False
+        self._tof_dead_since = None
+        self._tof_dead_warned = False
 
         logger.info("Scenario reset complete.")
             
