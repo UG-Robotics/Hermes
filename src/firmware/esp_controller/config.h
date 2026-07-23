@@ -67,6 +67,13 @@ const int long BAUD_RATE = 115200;
 // streaming rate this floods the serial TX and competes with the TEL line.
 #define DEBUG_ECHO_CMD 1
 
+    // Debug: echo each ACCEPTED CMD back over serial so you can confirm on the
+    // monitor that the ESP is actually receiving valid commands. A valid CMD is
+    // otherwise silent (see handleCmd in serial_protocol.cpp), which is why a good
+    // packet looks like "nothing happened". Set to 0 before racing: at the Pi's
+    // streaming rate this floods the serial TX and competes with the TEL line.
+    #define DEBUG_ECHO_CMD 1
+
 // telemetry
 const unsigned long TELEMETRY_INTERVAL = 100;
 
