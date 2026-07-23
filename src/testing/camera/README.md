@@ -155,6 +155,10 @@ of the frame. Expect **exactly one** `new=1` as it enters and **one** `CLEARED`
 a few frames after it leaves — not a burst.
 
 > The camera only reports the *edges*. Turning edges into a lap count is Job 6.
+> Each corner has **two** lines (entry + exit), so one corner = 2 lines, one
+> lap = 4 corners = **8 lines**, and a 3-lap run = **24 lines**. This test only
+> checks that a single line is detected/classified cleanly; the pairing of two
+> lines into one counted corner is Job 6.
 
 **Expected live output:**
 ```
@@ -244,9 +248,12 @@ python -m testing.camera.integration_test     # no hardware
 
 Proves the glue in `runtime.py` around the detectors:
 
-* a corner is counted **once**, on the completion edge — `CORNERS_PER_LAP`
-  (4) completions = 1 lap; `TARGET_LAPS` (3) = `THREE_LAPS_COMPLETE` once;
-* run direction latches from the **first** corner marker's colour;
+* each corner has 2 lines (entry + exit); runtime fires on each line's
+  **appearance** and pairs them — the entry line enters the corner
+  (→LAP_CHECK), the exit line completes it (→count). So a corner is counted
+  **once**, on the exit line; `CORNERS_PER_LAP` (4) corners = 8 lines = 1 lap;
+  `TARGET_LAPS` (3) = 24 lines = `THREE_LAPS_COMPLETE` once;
+* run direction latches from the **first line's** colour (the entry line);
 * the **OPEN** verdict fires after a full lap with no pillar;
 * `run_pillars` is off in an OPEN run;
 * `_VISION_ACTIVE_STATES` is exactly the 4 driving states (checked against the
@@ -333,12 +340,14 @@ calibration step.
 - [ ] `[S]` `[L]` `cleared` fires via shrink+close AND via 5 lost frames
 - [ ] `[S]` Single dropped frame does NOT clear (hysteresis)
 
-### 3. Corner markers → laps
+### 3. Corner markers → laps (2 lines per corner: entry + exit)
 - [ ] `[S]` `[L]` Orange vs blue classified correctly
 - [ ] `[S]` Sub-`MIN_CORNER_MARKER_AREA` noise ignored; thin line still triggers
-- [ ] `[S]` `[L]` One `new_detection` on entry, one `cleared` on exit; 4-frame hysteresis
-- [ ] `[S]` Lap math: 4 corners = 1 lap, 12 = 3 laps → `THREE_LAPS_COMPLETE` once
-- [ ] `[S]` `[L]` Direction latches from the first marker (orange=CW / blue=CCW), sticky
+- [ ] `[S]` `[L]` One `new_detection` per line appearance; 4-frame hysteresis
+- [ ] `[S]` Runtime fires on line **appearance** only (a single line ≠ a whole corner)
+- [ ] `[S]` Lap math: 2 lines = 1 corner, 8 lines = 1 lap, **24 lines = 3 laps** → `THREE_LAPS_COMPLETE` once
+- [ ] `[S]` `[L]` Direction latches from the **first line** (entry: orange=CW / blue=CCW), sticky
+- [ ] `[L]` On robot: drive a full lap, confirm `Lap complete: 1/3` after 8 lines (not 4)
 
 ### 4. Parking zone
 - [ ] `[S]` `[L]` Magenta detected; `MIN_PARKING_MARKER_AREA` respected
