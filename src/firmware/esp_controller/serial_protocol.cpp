@@ -82,6 +82,17 @@ namespace
         latestCommand.valid = true;
         newCommandFlag = true;
         emergencyFlag = false; // a fresh normal CMD clears a prior emergency latch
+#if DEBUG_ECHO_CMD
+        // Debug receipt confirmation: echo the ACCEPTED command back so the
+        // monitor shows valid CMDs landing (they're otherwise silent, per the
+        // NB below). Gated by DEBUG_ECHO_CMD in config.h -- turn it OFF before
+        // racing, exactly for the flooding reason the NB describes.
+        Serial.print("ECHO,CMD,");
+        Serial.print(latestCommand.speed);  Serial.print(',');
+        Serial.print(latestCommand.steer);  Serial.print(',');
+        Serial.print(latestCommand.action); Serial.print(',');
+        Serial.println(latestCommand.mode);
+#endif
         // NB: do NOT echo every CMD back as STATUS here. The Pi streams a CMD
         // per tick (~20 Hz), and echoing 2 STATUS lines per CMD floods the
         // serial TX so hard it starves the TEL telemetry line (and can back up
