@@ -454,7 +454,7 @@ function ev(n){ post('/api/event',{event:n}); }
 function toggleManual(){ manualOn=!manualOn; post('/api/manual',{active:manualOn});
   const b=$('manual-btn'); b.textContent=manualOn?'Release to Autonomous':'Take Manual Control'; b.classList.toggle('on',manualOn); }
 function drive(action,steer){ held=true; if(!manualOn){manualOn=true;$('manual-btn').textContent='Release to Autonomous';$('manual-btn').classList.add('on');}
-  const speed=action==='STOP'?0:action==='BACKWARD'?100:150;
+  const speed=action==='STOP'?0:255;  // full throttle -- motor is underpowered; 150/100 was too weak to move
   post('/api/manual',{active:true,target:{speed,steer,action}}); }
 function release(){ held=false; post('/api/manual',{active:true,target:{speed:0,steer:0,action:'STOP'}}); }
 function post(url,body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
