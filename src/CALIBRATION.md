@@ -82,19 +82,24 @@ known distance (say 1000 mm), read its pixel width from the vision tester, solve
 `PILLAR_CLEAR_DISTANCE_MM` (180) so `OBSTACLE_CLEARED` fires just as you draw
 alongside the pillar — too early aborts the pass, too late clips it.
 
-## 6. Lane / wall detection  → `config/thresholds.py`
+## 6. Corridor centering — ToF + IMU  → `config/thresholds.py`
 
-- `LANE_BLACK_S_MAX` / `LANE_BLACK_V_MAX`: the "this pixel is a black wall"
-  cutoff. If shadows read as wall, lower `V_MAX`; if a dim wall is missed,
-  raise it.
-- `LANE_ROI_TOP_FRAC` / `BOTTOM_FRAC` (0.45–0.95): the band of frame searched
-  for walls. Raise the top if the car's own bumper/horizon leaks in.
-- `LANE_DEFAULT_HALF_WIDTH_PX` (110): where the corridor centre is assumed to
-  be when only one wall is visible. Set it to roughly half the corridor's pixel
-  width at mid-ROI for your camera height.
-- `LANE_STEER_KP` (0.06) / `LANE_MAX_NUDGE_DEG` (4): how hard vision drags the
-  heading target toward corridor centre. Raise KP if centering is lazy; lower
-  if the car wanders toward walls.
+Centering is done from the two side ToFs, not the camera (see
+`planning/wall_centering.py`). First make sure `left == right` ToF when the car
+is physically centred in the corridor — if not, the mounts are asymmetric; fix
+that before tuning gains.
+
+- `TOF_WALL_SEEN_MAX_MM` (1200): a side reading at/above this is "no wall this
+  side" (corner opening / wide corridor). Must exceed the widest the far wall
+  sits at when the car is hard against the near wall.
+- `TOF_CENTER_KP` (0.05) / `TOF_CENTER_MAX_NUDGE_DEG` (4): how hard the ToF
+  difference drags the heading target toward centre. Raise KP if centering is
+  lazy; lower it (or widen the deadband) if the car hunts side to side.
+- `TOF_CENTER_DEADBAND_MM` (20): lateral offset treated as "centred enough".
+- `TOF_WALL_FOLLOW_TARGET_MM` (500): clearance held to the single visible wall
+  at corners / open edges. ~Half the corridor width.
+- `INNER_WALL_BIAS_MM` (120): OPEN-only — mm to hug the inner wall once the run
+  direction is known. 0 disables. Verify with `testing/test_wall_centering.py`.
 
 ## 7. ToF wall safety & speed  → `config/thresholds.py`
 
@@ -108,7 +113,7 @@ alongside the pillar — too early aborts the pass, too late clips it.
 
 ## 8. Inner-wall bias (OPEN only)  → `config/thresholds.py`
 
-`INNER_WALL_BIAS_PX` (45) shifts the open-challenge racing line toward the inner
+`INNER_WALL_BIAS_MM` (120) shifts the open-challenge racing line toward the inner
 wall once direction is known. **0 disables it** (pure centering). Increase for a
 tighter line; back off if the car ever brushes the inner wall. Never applied in
 an obstacle run.

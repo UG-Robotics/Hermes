@@ -43,16 +43,15 @@ from state_machine.event_queue import EventQueue
 from state_machine.events import EventType, make_event, EVENT_PRIORITY_MAP
 
 from perception.pillar_detection import PillarDetector
-from perception.track_detection import detect_lane
 from perception.corner_detection import CornerTracker
 from perception.finish_detection import ParkingZoneTracker
 
-from planning.lane_centering import compute_heading_nudge
+from planning.wall_centering import compute_centering_nudge
 from planning.obstacle_planner import adjust_avoidance_steer
 from planning.parking_planner import ParkingManeuver, park_side_for_direction
 
 from config.thresholds import (
-    CORNERS_PER_LAP, OPEN_DECISION_AFTER_CORNERS, INNER_WALL_BIAS_PX,
+    CORNERS_PER_LAP, OPEN_DECISION_AFTER_CORNERS, INNER_WALL_BIAS_MM,
     START_MOVE_DELAY_S, FINAL_APPROACH_OPEN_DURATION_S,
 )
 
@@ -381,15 +380,10 @@ class Runtime:
 
         ctx = self.state_machine.context
 
-        # Continuous camera-based corridor centering -- runs every FOLLOW_TRACK
-        # tick regardless of challenge mode or pillar state, nudging the
-        # heading-hold target toward the detected wall midpoint (and, in an
-        # OPEN run, toward the inner wall). It's what an open run depends on and
-        # a harmless trim in an obstacle run. See planning/lane_centering.py for
-        # why this is a nudge (SteeringController.nudge_target) not a turn_by()
-        # reset every frame.
-        if state == State.FOLLOW_TRACK:
-            self._update_lane_centering(frame)
+        # NB: corridor centering is NOT done here any more -- it moved off the
+        # camera onto the side ToFs + IMU (see tick()'s _update_wall_centering()
+        # call and planning/wall_centering.py). This method is now purely the
+        # camera's job: pillars, corner markers, and the parking zone.
 
         # OPEN-challenge perception gating: once we know there are no traffic
         # signs on this mat, stop spending vision on pillar detection entirely
@@ -494,38 +488,44 @@ class Runtime:
             self._hub.event(EventType.PARKING_ZONE_DETECTED.name,
                              EVENT_PRIORITY_MAP[EventType.PARKING_ZONE_DETECTED].name, source="vision")
 
-    def _update_lane_centering(self, frame) -> None:
-        """One tick of camera-based corridor centering (FOLLOW_TRACK only).
+    def _update_wall_centering(self) -> None:
+        """One tick of ToF + IMU corridor centering (FOLLOW_TRACK only).
 
-        Detects the corridor's centre offset from the current frame
-        (perception/track_detection.py), records it on the context for
-        telemetry/dashboard, and -- if the detection is trustworthy enough
-        -- nudges the heading-hold controller's locked target toward it.
+        No camera involved: reads this tick's two side ToF distances (already
+        refreshed onto the context by _refresh_tof_context()), turns them into
+        a small heading nudge (planning/wall_centering.py), records it on the
+        context for telemetry/dashboard, and -- unless we're already centred --
+        nudges the heading-hold controller's locked target toward the middle of
+        the corridor. The IMU heading-hold PID does the actual servo smoothing;
+        this only drags its aim point, exactly as the old camera lane centering
+        did (SteeringController.nudge_target, not a per-tick turn_by() reset).
         """
-        obs = detect_lane(frame, self.camera.width, self.camera.height)
+        if self.state_machine.current_state != State.FOLLOW_TRACK:
+            return
         ctx = self.state_machine.context
-        ctx.lane_offset_px = obs.offset_px if obs.valid else None
-        ctx.lane_confidence = obs.confidence
+        obs = compute_centering_nudge(ctx.tof_left_mm, ctx.tof_right_mm,
+                                      bias_mm=self._inner_wall_bias(ctx))
+        ctx.centering_offset_mm = obs.offset_mm if obs.valid else None
+        ctx.centering_mode = obs.mode
 
-        nudge = compute_heading_nudge(obs, self.camera.width, bias_px=self._inner_wall_bias(ctx))
-        if nudge:
-            self.steering.nudge_target(nudge)
+        if obs.nudge_deg:
+            self.steering.nudge_target(obs.nudge_deg)
 
     def _inner_wall_bias(self, ctx) -> float:
-        """Pixels to bias the lane-centre target toward the INNER wall -- OPEN
-        challenge only. Once direction is known (first corner marker),
+        """Millimetres to bias the centering target toward the INNER wall --
+        OPEN challenge only. Once direction is known (first corner marker),
         CLOCKWISE means the inner wall is on the RIGHT (+bias) and
         COUNTER_CLOCKWISE on the LEFT (-bias); hugging it keeps the car off
         the outer wall on the wide, variable open corridor. Always 0 for an
         OBSTACLE run (the car must stay centred to pass pillars on either
         side) and until both mode and direction are known. Tunable via
-        config/thresholds.py's INNER_WALL_BIAS_PX (0 disables)."""
-        if ctx.challenge_mode != "OPEN" or not INNER_WALL_BIAS_PX:
+        config/thresholds.py's INNER_WALL_BIAS_MM (0 disables)."""
+        if ctx.challenge_mode != "OPEN" or not INNER_WALL_BIAS_MM:
             return 0.0
         if ctx.race_direction == "CLOCKWISE":
-            return float(INNER_WALL_BIAS_PX)
+            return float(INNER_WALL_BIAS_MM)
         if ctx.race_direction == "COUNTER_CLOCKWISE":
-            return -float(INNER_WALL_BIAS_PX)
+            return -float(INNER_WALL_BIAS_MM)
         return 0.0
 
     def _maybe_auto_start(self) -> None:
@@ -681,6 +681,14 @@ class Runtime:
         # 2) PERCEIVE: look for pillars and raise events off real vision.
         self._update_vision()
 
+        # 2a) CENTER: nudge the IMU heading-hold target toward the middle of
+        #     the corridor from the side ToFs (FOLLOW_TRACK only). Runs off the
+        #     ToF reading refreshed in step 1b -- no camera dependency, and
+        #     before the heading-hold PID computes this tick's steer (step 6),
+        #     so this tick's nudge takes effect this tick. See
+        #     planning/wall_centering.py.
+        self._update_wall_centering()
+
         # 2b) OPEN-run finish: raise FINISH_ZONE_DETECTED once FINAL_APPROACH
         #     has run its course (no magenta lot to detect). Pushed before the
         #     state machine drains below so it's handled this same tick.
@@ -783,8 +791,8 @@ class Runtime:
             "heading_error_deg": round(heading_error, 1),
             "imu": {k: round(v, 3) for k, v in imu_reading.items() if k != "heading_deg"},
             "tof": {"left_mm": round(ctx.tof_left_mm, 1), "right_mm": round(ctx.tof_right_mm, 1)},
-            "lane": {"offset_px": ctx.lane_offset_px,
-                     "confidence": round(ctx.lane_confidence, 2)},
+            "centering": {"offset_mm": None if ctx.centering_offset_mm is None else round(ctx.centering_offset_mm, 1),
+                          "mode": ctx.centering_mode},
             "corner": {"corners_passed": ctx.corners_passed,
                        "race_direction": ctx.race_direction,
                        "challenge_mode": ctx.challenge_mode,

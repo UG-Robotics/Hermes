@@ -37,11 +37,12 @@ class RobotContext:
     tof_left_mm: float = 2000.0
     tof_right_mm: float = 2000.0
 
-    # Latest camera-based corridor-centre offset (see
-    # perception/track_detection.py + planning/lane_centering.py). None
-    # until the first valid detection; confidence stays 0.0 until then too.
-    lane_offset_px: int | None = None
-    lane_confidence: float = 0.0
+    # Latest ToF-based corridor-centre offset (see planning/wall_centering.py).
+    # centering_offset_mm is the signed lateral offset in mm (+ = displaced
+    # toward the right wall), None when no wall is in range. centering_mode is
+    # "BOTH" | "LEFT_WALL" | "RIGHT_WALL" | "NONE" -- which regime produced it.
+    centering_offset_mm: float | None = None
+    centering_mode: str = "NONE"
 
     # Corner-marker bookkeeping (see perception/corner_detection.py +
     # runtime.py's _post_event_effects). corners_passed counts every
@@ -143,8 +144,8 @@ class RobotContext:
 
         self.tof_left_mm = 2000.0
         self.tof_right_mm = 2000.0
-        self.lane_offset_px = None
-        self.lane_confidence = 0.0
+        self.centering_offset_mm = None
+        self.centering_mode = "NONE"
 
         self.corners_passed = 0
         self.race_direction = None

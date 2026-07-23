@@ -11,14 +11,18 @@ HOW TO USE (on the Pi):
 
     1. Fill the CENTRE box (drawn on the saved preview) with ONE sample of the
        target colour -- a red pillar, a green pillar, an orange/blue floor
-       line, the magenta parking line, or a black wall.
+       line, or the magenta parking line.
     2. Hold it steady; the tool averages ~40 frames.
     3. It prints the measured H/S/V spread and SUGGESTED bounds with margin.
     4. Paste those into config/camera_config.py and re-run the matching
        testing/camera/*_test.py to confirm the colour now classifies.
 
-    --color one of: RED GREEN ORANGE BLUE MAGENTA BLACK
+    --color one of: RED GREEN ORANGE BLUE MAGENTA
     Repeat per colour. RED wraps the hue circle -- see the note it prints.
+
+    (Walls are no longer detected by the camera -- corridor centering moved to
+    the side ToFs + IMU, see planning/wall_centering.py -- so there is no
+    black-wall colour to calibrate here.)
 
 A preview with the sample box is saved to _debug_out/calib_<color>.png so you
 can confirm the box actually sat on the colour.
@@ -31,7 +35,7 @@ import sys
 from testing.camera import _bench as B
 from config.camera_config import FRAME_WIDTH, FRAME_HEIGHT
 
-VALID = ("RED", "GREEN", "ORANGE", "BLUE", "MAGENTA", "BLACK")
+VALID = ("RED", "GREEN", "ORANGE", "BLUE", "MAGENTA")
 
 
 def _arg(name, default=None):
@@ -53,8 +57,8 @@ def run():
     n = int(_arg("--frames", "40"))
 
     # Sample box: centre of the frame for pillars/parking, lower-centre for
-    # floor markers/walls (that's where they actually appear).
-    if color in ("ORANGE", "BLUE", "BLACK"):
+    # the orange/blue floor markers (that's where they actually appear).
+    if color in ("ORANGE", "BLUE"):
         cy = int(FRAME_HEIGHT * 0.8)
     else:
         cy = FRAME_HEIGHT // 2
@@ -103,28 +107,21 @@ def run():
     def clamp(x, lo, hi):
         return int(max(lo, min(hi, x)))
 
-    if color == "BLACK":
-        s_max = clamp(s95 + sm, 0, 255)
-        v_max = clamp(v95 + vm, 0, 255)
-        print("\nSUGGESTED (config/thresholds.py -- walls use S/V only, hue free):")
-        print(f"  LANE_BLACK_S_MAX = {s_max}")
-        print(f"  LANE_BLACK_V_MAX = {v_max}")
+    low = (clamp(h5 - hm, 0, 179), clamp(s5 - sm, 0, 255), clamp(v5 - vm, 0, 255))
+    high = (clamp(h95 + hm, 0, 179), clamp(s95 + sm, 0, 255), clamp(v95 + vm, 0, 255))
+    prefix = {"RED": "HSV_RED", "GREEN": "HSV_GREEN", "ORANGE": "HSV_ORANGE",
+              "BLUE": "HSV_BLUE", "MAGENTA": "HSV_MAGENTA"}[color]
+    print("\nSUGGESTED (config/camera_config.py):")
+    if color == "RED" and (h5 < hm or h95 > 179 - hm):
+        print("  # RED wraps the 0/180 hue boundary -- keep BOTH ranges. This")
+        print("  # tool measured only one side; widen whichever your sample hit:")
+        print(f"  {prefix}_LOW1 = (0, {low[1]}, {low[2]})")
+        print(f"  {prefix}_HIGH1 = ({clamp(h95 + hm, 0, 10)}, 255, 255)")
+        print(f"  {prefix}_LOW2 = ({clamp(h5 - hm, 170, 179)}, {low[1]}, {low[2]})")
+        print(f"  {prefix}_HIGH2 = (179, 255, 255)")
     else:
-        low = (clamp(h5 - hm, 0, 179), clamp(s5 - sm, 0, 255), clamp(v5 - vm, 0, 255))
-        high = (clamp(h95 + hm, 0, 179), clamp(s95 + sm, 0, 255), clamp(v95 + vm, 0, 255))
-        prefix = {"RED": "HSV_RED", "GREEN": "HSV_GREEN", "ORANGE": "HSV_ORANGE",
-                  "BLUE": "HSV_BLUE", "MAGENTA": "HSV_MAGENTA"}[color]
-        print("\nSUGGESTED (config/camera_config.py):")
-        if color == "RED" and (h5 < hm or h95 > 179 - hm):
-            print("  # RED wraps the 0/180 hue boundary -- keep BOTH ranges. This")
-            print("  # tool measured only one side; widen whichever your sample hit:")
-            print(f"  {prefix}_LOW1 = (0, {low[1]}, {low[2]})")
-            print(f"  {prefix}_HIGH1 = ({clamp(h95 + hm, 0, 10)}, 255, 255)")
-            print(f"  {prefix}_LOW2 = ({clamp(h5 - hm, 170, 179)}, {low[1]}, {low[2]})")
-            print(f"  {prefix}_HIGH2 = (179, 255, 255)")
-        else:
-            print(f"  {prefix}_LOW = {low}")
-            print(f"  {prefix}_HIGH = {high}")
+        print(f"  {prefix}_LOW = {low}")
+        print(f"  {prefix}_HIGH = {high}")
 
     saved = B.save_rgb(preview, f"calib_{color}.png")
     if saved:

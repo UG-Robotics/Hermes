@@ -34,8 +34,8 @@ def drive_command(state: State, context: RobotContext) -> tuple[int, int, str]:
         speed = apply_speed_scale(SPEED_DEFAULT_FORWARD, scale)
         # This is only the intent handed to the IMU heading-hold controller
         # (control/steering_control.py) in runtime.py, which locks "straight
-        # from here" (nudged toward the camera-detected corridor centre by
-        # planning/lane_centering.py) and does the actual closed-loop
+        # from here" (nudged toward the corridor centre from the side ToFs by
+        # planning/wall_centering.py) and does the actual closed-loop
         # correction, not the final steer value sent to the ESP32.
         steer = 0
         action = "FORWARD"

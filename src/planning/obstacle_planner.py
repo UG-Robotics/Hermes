@@ -24,8 +24,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+import time
+
 from config.thresholds import (
     TOF_WALL_WARNING_MM, TOF_WALL_CRITICAL_MM, TOF_MAX_VALID_MM,
+    TOF_MIN_PLAUSIBLE_SUM_MM,
     AVOIDANCE_STEER_CAP_NEAR_WALL_DEG, AVOIDANCE_WALL_NUDGE_DEG,
     SPEED_SCALE_WALL_WARNING, SPEED_SCALE_WALL_CRITICAL, SPEED_SCALE_MIN,
 )
@@ -50,6 +53,63 @@ def _clearance_side(direction: str) -> str:
     return "RIGHT" if direction == "RIGHT" else "LEFT"
 
 
+# ------------------------------------------------------ ToF sanity cross-check
+_last_spurious_log = 0.0
+
+
+def _spurious_close(near_mm: float, opposite_mm: Optional[float]) -> bool:
+    """True when a critically-close `near_mm` reading is physically contradicted
+    by the opposite side and is therefore a lying/stuck sensor, not a real wall.
+
+    The ONLY case flagged (so a real wall is never suppressed): both sides are
+    in range yet sum to less than TOF_MIN_PLAUSIBLE_SUM_MM -- two opposite walls
+    that close together can't bound any legal corridor, so at least one reading
+    is bogus. When the opposite side is out of range (a corner/opening) there's
+    nothing to cross-check against, so we do NOT flag it -- a genuine close wall
+    at a corner is taken at face value.
+
+    NOTE: this can only catch *geometrically impossible* readings (a dead sensor
+    reading ~0mm, crosstalk pulling both sides low, a swapped/garbage value). A
+    single sensor stuck close whose partner is consistent with actually hugging
+    that wall (e.g. right=79mm, left=900mm) is indistinguishable from reality
+    using the two ToFs alone -- that needs a sensor recalibration / mount fix.
+    """
+    if opposite_mm is None or opposite_mm >= TOF_MAX_VALID_MM:
+        return False
+    return (near_mm + opposite_mm) < TOF_MIN_PLAUSIBLE_SUM_MM
+
+
+def _sanitize_walls(tof_left_mm: Optional[float], tof_right_mm: Optional[float]):
+    """Cross-check the two side ToFs and neutralise a critically-close reading
+    the opposite side proves impossible (see _spurious_close), returning
+    (left, right) with any such reading replaced by TOF_MAX_VALID_MM ('no wall
+    in range') so it can't trigger braking or steer-capping downstream. Real
+    close walls (opposite side far, or out of range at a corner) pass through
+    untouched. Log is throttled to ~1 Hz so a persistently-stuck sensor doesn't
+    flood the tick-rate loop."""
+    left, right = tof_left_mm, tof_right_mm
+    left_bad = (left is not None and left < TOF_WALL_CRITICAL_MM
+                and _spurious_close(left, right))
+    right_bad = (right is not None and right < TOF_WALL_CRITICAL_MM
+                 and _spurious_close(right, left))
+
+    if left_bad or right_bad:
+        global _last_spurious_log
+        now = time.time()
+        if now - _last_spurious_log >= 1.0:
+            _last_spurious_log = now
+            logger.warning(
+                f"[OBSTACLE] Implausible ToF pair left={left}mm right={right}mm "
+                f"(sum < {TOF_MIN_PLAUSIBLE_SUM_MM:.0f}mm -- opposite walls can't "
+                f"both be this close). Ignoring the critical reading, not braking/capping."
+            )
+        if left_bad:
+            left = TOF_MAX_VALID_MM
+        if right_bad:
+            right = TOF_MAX_VALID_MM
+    return left, right
+
+
 def adjust_avoidance_steer(steer_angle: int, direction: str,
                             tof_left_mm: Optional[float], tof_right_mm: Optional[float]) -> AvoidancePlan:
     """Cap/soften a pillar-avoidance steer angle using the side ToF reading
@@ -57,6 +117,10 @@ def adjust_avoidance_steer(steer_angle: int, direction: str,
     whichever side wall is currently closest (both walls matter for speed;
     only the avoidance-direction wall matters for capping steer).
     """
+    # Cross-check the two sensors first so a lying/stuck 'critically close'
+    # reading can't trigger a hard steer-cap + away-nudge on a phantom wall.
+    tof_left_mm, tof_right_mm = _sanitize_walls(tof_left_mm, tof_right_mm)
+
     side = _clearance_side(direction)
     side_mm = tof_right_mm if side == "RIGHT" else tof_left_mm
 
@@ -97,6 +161,7 @@ def adjust_avoidance_steer(steer_angle: int, direction: str,
 def general_speed_scale(tof_left_mm: Optional[float], tof_right_mm: Optional[float]) -> float:
     """Speed scale for driving outside active pillar avoidance (e.g.
     FOLLOW_TRACK cornering) -- wall proximity only, no steer capping."""
+    tof_left_mm, tof_right_mm = _sanitize_walls(tof_left_mm, tof_right_mm)
     return _speed_scale_for_clearance(tof_left_mm, tof_right_mm)
 
 
