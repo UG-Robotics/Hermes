@@ -2,34 +2,35 @@
 Corner-section marker detection (orange/blue floor lines) -> lap counting
 and start-direction determination.
 
-WRO Future Engineers track: the track is 4 corner sections + 4 straight
-sections. Each corner section is bounded by a coloured line -- ORANGE marks
-a corner the car should take turning CLOCKWISE, BLUE marks one taken
-COUNTER-CLOCKWISE (the run's actual direction is randomised each round; the
-corner markers are how the car finds out -- there's no separate "here's
-your direction" signal. The colour of the FIRST corner marker the car ever
-sees for a run IS the direction for the whole run, per the standard WRO FE
-convention several public team repos document independently).
+WRO Future Engineers track: 4 corner sections + 4 straight sections, and
+each corner is marked by TWO coloured floor lines -- one where the car
+ENTERS the corner and one where it EXITS. The two colours are orange and
+blue; which one comes first depends on the run's (randomised) direction, and
+the colour of the FIRST line the car ever sees IS the direction for the whole
+run (ORANGE-first -> CLOCKWISE, BLUE-first -> COUNTER-CLOCKWISE), per the
+standard WRO FE convention several public team repos document independently.
+So one corner = 2 lines, one lap = 4 corners = 8 lines, and a 3-lap run = 24
+lines (12 of each colour).
 
-This module only does steps (i)-(ii) of that: detect that a corner marker
-is currently in view, and classify its colour. It does NOT count laps,
-decide "clockwise" vs "counter-clockwise" semantics, or touch the state
-machine -- that bookkeeping lives in runtime.py's _post_event_effects
-(mirrors the perception/planning split perception/pillar_detection.py
-already uses). Two frame-to-frame edges are all this module reports, and
-they deliberately mirror PillarObservation's new_detection/cleared fields:
+This module only does steps (i)-(ii) of that: detect that a corner LINE is
+currently in view, and classify its colour. It does NOT count laps, decide
+"clockwise" vs "counter-clockwise" semantics, or touch the state machine --
+that bookkeeping lives in runtime.py's _post_event_effects (mirrors the
+perception/planning split perception/pillar_detection.py already uses). Two
+frame-to-frame edges are all this module reports, and they deliberately
+mirror PillarObservation's new_detection/cleared fields:
 
-    new_detection -- a corner marker just appeared (entering a corner
-                      section). runtime.py treats this as "one corner
-                      started" and raises LAP_MARKER_DETECTED to move
-                      FOLLOW_TRACK -> LAP_CHECK (a brief, deliberate
-                      slowdown while traversing the corner).
-    cleared       -- the marker just disappeared (fully driven through the
-                      corner section). runtime.py treats this as "one
-                      corner finished" and raises LAP_MARKER_DETECTED again
-                      to return LAP_CHECK -> FOLLOW_TRACK, and -- every
-                      CORNERS_PER_LAP (config/thresholds.py) of these -- as
-                      "one lap done".
+    new_detection -- a corner LINE just appeared. This is the edge runtime.py
+                      acts on: it raises LAP_MARKER_DETECTED, and the
+                      FOLLOW_TRACK<->LAP_CHECK toggle pairs consecutive lines
+                      into corners -- an entry line moves FOLLOW_TRACK ->
+                      LAP_CHECK (slow through the corner), the next line
+                      (the exit) moves LAP_CHECK -> FOLLOW_TRACK and counts one
+                      corner. Every CORNERS_PER_LAP corners (8 lines) is a lap.
+    cleared       -- the line just left view. Reported for completeness /
+                      hysteresis, but runtime.py does NOT count on it (doing so
+                      is what made a single line register as a whole corner and
+                      double-counted this two-line-per-corner track).
 
 Step (v) -- touching the serial link or the state machine -- is not done
 here, same boundary perception/pillar_detection.py already documents.

@@ -312,16 +312,15 @@ class Runtime:
             self._start_pressed_ts = time.time()
 
         if event.type == EventType.LAP_MARKER_DETECTED:
-            # A corner marker raises LAP_MARKER_DETECTED on BOTH edges (see
-            # perception/corner_detection.py): when it first appears
-            # (FOLLOW_TRACK -> LAP_CHECK, "corner entered") and again when it
-            # disappears (LAP_CHECK -> FOLLOW_TRACK, "corner completed"). We
-            # count a corner exactly ONCE, on the completion edge -- counting
-            # both edges (the previous behaviour) double-counted every corner
-            # and made a "lap" fire every 2 physical corners instead of 4.
+            # Each corner has TWO floor lines (entry + exit); one lap = 4
+            # corners = 8 lines. _update_corner_tracking raises this event on
+            # each line's APPEARANCE, and the FOLLOW_TRACK<->LAP_CHECK toggle
+            # pairs them: the entry line lands here as old_state==FOLLOW_TRACK,
+            # the exit line as old_state==LAP_CHECK. We count a corner exactly
+            # ONCE, on the exit line, so 8 lines -> 1 lap and 24 lines -> 3 laps.
             if old_state == State.FOLLOW_TRACK:
-                # Corner entered: the ONLY job here is latching run direction
-                # from the very first corner marker's colour. No counting.
+                # Corner ENTRY line: the ONLY job here is latching run direction
+                # from the very first corner line's colour. No counting.
                 if ctx.race_direction is None:
                     color = event.metadata.get("color")
                     if color == "ORANGE":
@@ -332,8 +331,9 @@ class Runtime:
                         logger.info(f"Race direction determined: {ctx.race_direction}")
 
             elif old_state == State.LAP_CHECK:
-                # Corner completed -- count it, and use the count both to tick
-                # laps and to reach the OPEN verdict (a full lap with no pillar).
+                # Corner EXIT line -- the corner is done; count it once, and use
+                # the count both to tick laps and to reach the OPEN verdict (a
+                # full lap with no pillar).
                 ctx.corners_passed += 1
                 logger.info(f"Corner completed: {ctx.corners_passed} (lap of {CORNERS_PER_LAP})")
 
@@ -432,19 +432,33 @@ class Runtime:
             self._update_parking_zone(frame)
 
     def _update_corner_tracking(self, frame, state) -> None:
-        """Runs during FOLLOW_TRACK (watching for the next corner to start)
-        and LAP_CHECK (watching for the corner we're already in to end).
-        Both edges raise the SAME LAP_MARKER_DETECTED event -- see
-        perception/corner_detection.py's module docstring for why this
-        deliberately mirrors PillarObservation's new_detection/cleared
-        pair, and _post_event_effects for how the two edges are told
-        apart (by which state the state machine was in when each fired).
+        """Turn corner-line sightings into LAP_MARKER_DETECTED events.
+
+        The WRO FE track marks each corner with TWO floor lines: one at the
+        corner ENTRY and one at the EXIT (blue then orange, or orange then
+        blue, depending on run direction). So one corner = 2 lines, one lap =
+        4 corners = 8 lines, and a 3-lap run = 24 lines (12 of each colour).
+
+        We fire on each line's APPEARANCE (new_detection), never its
+        disappearance, and let the FOLLOW_TRACK<->LAP_CHECK toggle pair the two
+        lines of a corner:
+            * a line appears while FOLLOW_TRACK -> corner ENTRY -> LAP_CHECK
+              (_post_event_effects latches run direction here, no count),
+            * the next line appears while LAP_CHECK -> corner EXIT ->
+              FOLLOW_TRACK (_post_event_effects counts ONE corner here).
+        The car therefore stays in LAP_CHECK (slowed) for the whole corner,
+        from the entry line to the exit line.
+
+        This replaces the earlier one-line-per-corner model, which fired on a
+        single line's appear AND disappear and so counted every line as a
+        whole corner -- double-counting on this two-line-per-corner track and
+        ticking a "lap" every 2 physical corners.
         """
         obs = self.corner_tracker.update(frame, self.camera.width)
 
-        fired = (state == State.FOLLOW_TRACK and obs.new_detection) or \
-                (state == State.LAP_CHECK and obs.cleared)
-        if (not self.scenario_active) and fired:
+        # Only the appearance edge counts; a line clearing (its trailing edge)
+        # is ignored so a single line can't be both the entry and the exit.
+        if (not self.scenario_active) and obs.new_detection:
             metadata = {"color": obs.color}
             self._events.push(make_event(EventType.LAP_MARKER_DETECTED, metadata=metadata))
             self._hub.event(EventType.LAP_MARKER_DETECTED.name,
