@@ -3,7 +3,10 @@ import sys
 from picamera2 import Picamera2
 
 # Import project specific configuration layers
-from config.camera_config import FRAME_WIDTH, FRAME_HEIGHT
+from config.camera_config import (
+    FRAME_WIDTH, FRAME_HEIGHT,
+    PILLAR_LATERAL_OFFSET_PX, PILLAR_STEER_KP,
+)
 from config.robot_config import SPEED_DEFAULT_FORWARD, STEER_MIN, STEER_MAX
 
 # Import the vision engine from your preprocessing script
@@ -52,14 +55,16 @@ def run_standalone_test():
             if pillar_type is not None and cx is not None:
                 screen_center = FRAME_WIDTH // 2
                 
+                # Use the SAME aim-point offset + gain the runtime pillar
+                # planner uses (config/camera_config.py) so this bench demo
+                # can't drift from perception/pillar_detection.compute_steer_angle.
                 if pillar_type == 'RED':
-                    target_x = screen_center + 180  # Shift target vector rightward
+                    target_x = screen_center + PILLAR_LATERAL_OFFSET_PX  # pass RIGHT of red
                 else:
-                    target_x = screen_center - 180  # Shift target vector leftward
-                    
+                    target_x = screen_center - PILLAR_LATERAL_OFFSET_PX  # pass LEFT of green
+
                 error = target_x - cx
-                kp = 0.5
-                steer = int(error * kp)
+                steer = int(error * PILLAR_STEER_KP)
                 
                 # Protect mechanical limits by clamping the variable
                 steer = max(STEER_MIN, min(steer, STEER_MAX))
@@ -80,6 +85,7 @@ def run_standalone_test():
         camera.stop()
         camera.close()
         print("Standalone verification completed successfully.")
-vision_task_
+
+
 if __name__ == '__main__':
     run_standalone_test()
