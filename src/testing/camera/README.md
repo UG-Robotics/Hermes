@@ -11,8 +11,13 @@ detector downstream is only as correct as the frame it's handed.
 | 2 | Pillar detect + avoid | `perception/pillar_detection.py` | `pillar_test.py` | colour, pass-side, steer, distance |
 | 3 | Corner markers → laps | `perception/corner_detection.py` | `corner_test.py` | orange/blue edges |
 | 4 | Parking zone | `perception/finish_detection.py` | `parking_test.py` | magenta confirmed |
-| 5 | Lane / wall centering | `perception/track_detection.py` | `lane_test.py` | corridor offset |
 | 6 | Integration / gating | `runtime.py` | `integration_test.py` | laps, mode, state gating |
+
+> **Lane / wall centering is no longer a camera job.** The forward camera's
+> FOV is too narrow to see both walls, so corridor centering moved to the side
+> ToFs + IMU (`planning/wall_centering.py`, tested by
+> `testing/test_wall_centering.py`). The camera now only does pillars, corner
+> markers, and the parking zone. That's why there is no Job 5 here.
 
 Plus two calibration tools: `calibrate_hsv.py` (colour bounds) and
 `calibrate_focal.py` (pillar-distance focal length).
@@ -56,10 +61,11 @@ USB webcam (OpenCV) and then to synthetic frames.
 
 ```bash
 cd src
-for j in frame_source pillar corner parking lane; do
+for j in frame_source pillar corner parking; do
   echo "== $j =="; python -m testing.camera.${j}_test --selfcheck || echo "  ^ FAILED"
 done
 python -m testing.camera.integration_test
+python -m unittest testing.test_wall_centering   # ToF+IMU centering (not a camera job)
 ```
 
 Every block ends in `SELF-CHECK: PASS` / `INTEGRATION: PASS`. If any line reads
@@ -198,34 +204,35 @@ CONFIRMED cx=160 area=655  (latched)
 
 ---
 
-## Job 5 — Lane / wall centering
+## (Former Job 5) Lane / wall centering — moved to ToF + IMU
+
+Corridor centering is no longer camera-based. It now lives in
+`planning/wall_centering.py` and is driven from the two side ToF distances on
+the context every tick (`runtime._update_wall_centering`). Test it with:
 
 ```bash
-python -m testing.camera.lane_test          # live; robot in a real corridor
-python -m testing.camera.lane_test --selfcheck
+cd src
+python -m unittest testing.test_wall_centering        # logic (signs, modes, bias, clamp)
 ```
 
-**Do in person:** with the robot between two black walls, physically slide it
-toward the **left** wall. `off` should go **positive** and `nudge` **positive**
-(steer right, back to centre). Slide right → both negative. Remove one wall →
-`conf=0.5`. Point at open white mat → `INVALID`.
+**Do in person (on the robot):** in a real corridor, watch the dashboard/logs
+`centering` field (`mode`, `offset_mm`). Physically slide the robot toward the
+**right** wall → `offset_mm` goes **positive** and the heading target nudges
+**left** (negative), steering back to centre. Remove one wall → `mode` becomes
+`LEFT_WALL`/`RIGHT_WALL` and it holds `TOF_WALL_FOLLOW_TARGET_MM` clearance.
+Both walls out of range (>`TOF_WALL_SEEN_MAX_MM`) → `mode NONE`, no correction
+(coasts on the IMU heading).
 
-**Expected live output:**
-```
-valid off=+34 conf=1.0  L=118 R=286  nudge=+2.0
-valid off=-40 conf=0.5  L=None R=232 nudge=-2.4
-INVALID (no walls)
-```
-
-**Known bugs & fixes**
+**Known issues & fixes**
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| White mat detected as wall | `LANE_BLACK_S_MAX`/`V_MAX` too high | `calibrate_hsv --color BLACK` gives suggested S/V max; lower them in `thresholds.py` |
-| Walls never detected | S/V max too low, or ROI misses the wall base | raise the maxes; check `LANE_ROI_TOP_FRAC`/`BOTTOM_FRAC` frame the wall foot |
-| Offset sign backwards (steers into the wall) | sign convention | `+offset` = corridor centre right of image centre = drifted left = nudge right; verified in `--selfcheck` |
-| Car hugs a wall on straights | `LANE_DEFAULT_HALF_WIDTH_PX` guess wrong for one-wall case, or `INNER_WALL_BIAS_PX` too strong (OPEN only) | retune both on the mat |
-| Jittery centering | deadband too small / gain too high | raise `LANE_OFFSET_DEADBAND_PX`, lower `LANE_STEER_KP`, cap via `LANE_MAX_NUDGE_DEG` |
+| Sits off-centre by a constant amount | ToF mounts not symmetric, or a per-sensor bias | trim in one place — `ToFArray` (`hardware/tof.py`) or add an offset; verify `left==right` when physically centred |
+| Wanders / hunts side to side | gain too high or deadband too small | lower `TOF_CENTER_KP`, raise `TOF_CENTER_DEADBAND_MM`, cap with `TOF_CENTER_MAX_NUDGE_DEG` |
+| Over-corrects at corners | far wall drops out mid-corner and it switches to wall-follow abruptly | tune `TOF_WALL_SEEN_MAX_MM` and `TOF_WALL_FOLLOW_TARGET_MM`; the corner marker + heading-hold handles the actual turn |
+| Steers the wrong way | sign convention | +offset = displaced toward RIGHT wall = nudge left; locked by `testing/test_wall_centering.py` |
+| Doesn't hug the inner wall in OPEN | `INNER_WALL_BIAS_MM` too small, or direction not yet latched | raise it; bias only applies once `race_direction` is known and only in BOTH-walls mode |
+| L/R swapped (steers into walls) | ToF wiring — `tof1`=left/`tof2`=right assumption wrong | flip in one place, `ToFArray` in `hardware/tof.py` (its docstring calls this out) |
 
 ---
 
@@ -280,8 +287,9 @@ python -m testing.camera.calibrate_hsv --color GREEN
 python -m testing.camera.calibrate_hsv --color ORANGE
 python -m testing.camera.calibrate_hsv --color BLUE
 python -m testing.camera.calibrate_hsv --color MAGENTA
-python -m testing.camera.calibrate_hsv --color BLACK      # walls -> S/V max
 ```
+(No `BLACK`/wall calibration — walls are sensed by the side ToFs now, not the
+camera; tune those via the `TOF_*` constants in `config/thresholds.py`.)
 Fill the drawn centre box with one clean sample; it averages ~40 frames and
 prints ready-to-paste bounds plus a preview so you can confirm the box sat on
 the colour.
@@ -303,8 +311,8 @@ calibration step.
 
 ### 0. Calibration (do first, on the competition mat)
 - [ ] `[C]` HSV bounds calibrated for RED, GREEN, ORANGE, BLUE, MAGENTA under match lighting
-- [ ] `[C]` BLACK wall S/V max calibrated (white mat NOT in the mask)
 - [ ] `[C]` `CAMERA_FOCAL_PX` calibrated against a tape-measured pillar
+- [ ] `[C]` ToF centering tuned on the mat (`TOF_CENTER_KP`, `TOF_CENTER_DEADBAND_MM`, `TOF_WALL_FOLLOW_TARGET_MM`); left==right ToF when physically centred
 
 ### 1. Frame acquisition
 - [ ] `[L]` Backend is `picamera2` on the Pi (not opencv/synthetic)
@@ -337,13 +345,15 @@ calibration step.
 - [ ] `[S]` `[L]` 5 consecutive → confirm once, then latched
 - [ ] `[S]` `[L]` <5-frame flash does NOT confirm
 
-### 5. Lane / wall centering
-- [ ] `[S]` `[L]` White mat excluded from wall mask
-- [ ] `[S]` Both walls → `confidence=1.0`, true midpoint
-- [ ] `[S]` One wall → `confidence=0.5` (assumed half-width)
-- [ ] `[S]` `[L]` No walls (white) → `valid=False`
-- [ ] `[S]` `[L]` Offset sign: drift left → `+offset` → `+nudge` (steer right)
-- [ ] `[S]` ROI limited to the lower band (0.45–0.95 of height)
+### 5. Corridor centering — ToF + IMU (`planning/wall_centering.py`, NOT the camera)
+- [ ] `[S]` Both walls seen → `BOTH` mode; displaced right → nudge left (sign) — `testing/test_wall_centering.py`
+- [ ] `[S]` One wall seen → `LEFT_WALL`/`RIGHT_WALL` wall-follow at `TOF_WALL_FOLLOW_TARGET_MM`
+- [ ] `[S]` No walls in range → `NONE`, no nudge (coast on IMU heading)
+- [ ] `[S]` Centred within deadband → no nudge; nudge clamped to `TOF_CENTER_MAX_NUDGE_DEG`
+- [ ] `[S]` OPEN inner-wall bias (`INNER_WALL_BIAS_MM`) hugs the correct wall; OBSTACLE run unbiased
+- [ ] `[L]` On robot: `left==right` ToF when physically centred (mount symmetry)
+- [ ] `[L]` On robot: slide toward right wall → `offset_mm` positive, steers left back to centre
+- [ ] `[L]` On robot: ToF L/R not swapped (car steers away from the near wall, not into it)
 
 ### 6. Integration / state gating
 - [ ] `[S]` Vision runs only in the 4 driving states (no stray event in `WAIT_FOR_START`)

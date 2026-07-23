@@ -1,75 +1,51 @@
-# Thresholds for lane (wall) detection, TOF wall-safety, and speed scaling.
+# Thresholds for ToF corridor centering, TOF wall-safety, and speed scaling.
 #
 # Ties back to the WRO 2026 Future Engineers field spec (game field + rules
 # PDFs): the track surface is white, both the outer perimeter wall and the
-# movable inner walls are black and 100mm tall, and there are NO painted
-# centre lane lines on the mat -- only 20mm orange/blue corner-vs-straight
-# markers on the floor, which perception/track_detection.py intentionally
-# ignores. So "the lane" is the free corridor between whichever walls
-# currently bound the track at the robot's position, and "lane detection"
-# here means finding where those black walls start in the camera frame, not
-# following a painted centre line.
+# movable inner walls are black and 100mm tall. Corridor centering is done
+# from the two SIDE ToF sensors + the IMU (see planning/wall_centering.py),
+# NOT the camera -- the forward camera's FOV is too narrow to see both walls
+# reliably, so it's left to spot the coloured pillars, the 20mm orange/blue
+# corner markers, and the magenta parking zone. "The lane" is the free
+# corridor between whichever walls currently bound the track at the robot's
+# position; "centering" means equalising the two side ToF distances.
 #
 # Corridor width is 600-1000mm (+/-100mm) in the Open Challenge and a fixed
 # 1000mm (+/-10mm) in the Obstacle Challenge (see rules doc section 8).
 
 from __future__ import annotations
 
-# --------------------------------------------------------------------- lane
-# ROI: a horizontal band of the frame, expressed as fractions of frame
-# height, where we look for wall pixels. Starts below the horizon (top of
-# the corridor recedes into the distance -> noisy/irrelevant) and stops
-# short of the very bottom (robot's own chassis/bumper can appear there).
-LANE_ROI_TOP_FRAC = 0.45
-LANE_ROI_BOTTOM_FRAC = 0.95
+# ----------------------------------------------------- ToF corridor centering
+# All distances are millimetres, matching hardware/tof.py's readings. See
+# planning/wall_centering.py for how these turn two side distances into a
+# per-tick heading nudge on top of the IMU heading-hold loop.
 
-# HSV upper bounds for "this pixel is wall, not track floor". Black has no
-# meaningful hue, so only S (saturation) and V (value/brightness) are used;
-# hue is left unconstrained (0..179).
-LANE_BLACK_S_MAX = 90
-LANE_BLACK_V_MAX = 70
+# A side reading at/above this is treated as "no wall on this side" (the far
+# side of a wide corridor, a corner opening, or the OUT_OF_RANGE_MM sentinel),
+# not a real wall to centre against. Must exceed the widest half-corridor the
+# far wall can sit at when the car is hard against the near wall (~1000mm), so
+# both walls still register when off-centre.
+TOF_WALL_SEEN_MAX_MM = 1200.0
 
-# Column-count smoothing: average adjacent columns' black-pixel counts with
-# a rolling window this wide before thresholding, so a single noisy column
-# doesn't flip a wall edge on/off frame-to-frame.
-LANE_SMOOTH_KERNEL = 5
+# Proportional gain: degrees of heading nudge per mm of lateral offset from
+# the corridor centre. Deliberately gentle -- this runs every tick as a
+# continuous trim on top of the heading-hold PID (planning/wall_centering.py),
+# not a single corrective manoeuvre like the pillar-avoidance turn_by() angle.
+# At 0.05, an 80mm offset saturates the per-tick cap below.
+TOF_CENTER_KP = 0.05
 
-# A column counts as "wall" once at least this fraction of the ROI band's
-# height is black. 0.35 tolerates a wall that's partially occluded/angled
-# without false-triggering on shadows or the odd stray dark pixel.
-LANE_MIN_WALL_FRACTION = 0.35
-
-# Cap how far from image centre we'll ever report a corridor-centre offset,
-# as a fraction of the half-frame-width. Keeps a single bad detection from
-# demanding a wild nudge.
-LANE_MAX_OFFSET_FRAC = 0.9
-
-# When only ONE wall is visible (very common: 1000mm corridors and corners
-# routinely put the far wall out of frame), assume the corridor centre is
-# this many pixels in from that wall. This is a rough, uncalibrated guess
-# proportional to a typical ~1000mm corridor at FRAME_WIDTH=320 -- retune
-# on the mat alongside CAMERA_FOCAL_PX in camera_config.py.
-LANE_DEFAULT_HALF_WIDTH_PX = 110
-
-# ---------------------------------------------------------- lane centering
-# Proportional gain: pixels of corridor-centre offset -> degrees of heading
-# nudge. Deliberately gentle -- this runs every tick as a continuous trim on
-# top of the heading-hold PID (see planning/lane_centering.py), not a single
-# corrective manoeuvre like the pillar-avoidance turn_by() angle.
-LANE_STEER_KP = 0.06
+# Deadband, in mm: lateral offsets smaller than this are "centred enough", so
+# the loop doesn't hunt over ToF noise / a slightly asymmetric mount.
+TOF_CENTER_DEADBAND_MM = 20.0
 
 # Per-tick nudge cap, in degrees. Bounds how fast the heading-hold PID's
-# locked target can be dragged around by vision alone.
-LANE_MAX_NUDGE_DEG = 4.0
+# locked target can be dragged around by the ToF centering loop alone.
+TOF_CENTER_MAX_NUDGE_DEG = 4.0
 
-# Ignore observations below this confidence (see LaneObservation.confidence
-# in perception/track_detection.py) -- e.g. a single-wall guess right after
-# a corner, before we trust it enough to steer off of it.
-LANE_MIN_CONFIDENCE = 0.45
-
-# Deadband, in pixels: offsets smaller than this are treated as "centred
-# enough", so the loop doesn't hunt over sub-pixel noise.
-LANE_OFFSET_DEADBAND_PX = 8
+# Target clearance to hold to the single visible wall when only ONE wall is in
+# range (wall-following at corners / open edges). ~Half a nominal 1000mm
+# corridor. Retune on the mat next to TOF_WALL_SEEN_MAX_MM.
+TOF_WALL_FOLLOW_TARGET_MM = 500.0
 
 # --------------------------------------------------------------- TOF walls
 # Both ToF sensors live on the ESP32 (firmware/esp_controller/tof.cpp) and
@@ -87,6 +63,17 @@ TOF_WALL_WARNING_MM = 150.0
 # Below this: imminent contact risk -- cap avoidance steer hard and nudge
 # away from the wall regardless of what the pillar-avoidance angle wanted.
 TOF_WALL_CRITICAL_MM = 80.0
+
+# Sensor cross-check: two OPPOSITE side walls cannot both be closer than this
+# combined -- they'd bound a corridor narrower than the 600mm minimum (rules
+# doc section 8), even for a zero-width robot. So when both ToFs are in range
+# but sum below this, at least one is lying/stuck, and a "critically close"
+# reading from the pair is treated as spurious rather than a real wall (see
+# planning/obstacle_planner._spurious_close): the car won't brake or cap
+# steering on a phantom. Deliberately well below the real minimum clearance so
+# a genuine close wall is NEVER suppressed. At a corner (one side out of range)
+# there's nothing to cross-check, so a close reading is taken at face value.
+TOF_MIN_PLAUSIBLE_SUM_MM = 300.0
 
 # When AVOID_OBSTACLE's steer angle needs capping because the wall we're
 # steering toward is within TOF_WALL_WARNING_MM, this is the ceiling
@@ -140,15 +127,17 @@ OPEN_DECISION_AFTER_CORNERS = CORNERS_PER_LAP
 # ---------------------------------------------------------- inner-wall bias
 # OPEN-challenge only: once we know the run direction (from the first corner
 # marker's colour) we also know which side the INNER wall is on -- CLOCKWISE
-# hugs the RIGHT wall, COUNTER_CLOCKWISE the LEFT. Biasing the lane-centering
+# hugs the RIGHT wall, COUNTER_CLOCKWISE the LEFT. Biasing the ToF-centering
 # target a little toward that inner wall makes the racing line tighter and,
 # more importantly, keeps the car reliably away from the outer wall on the
 # wide/variable open-challenge corridor. Obstacle runs are NEVER biased (the
 # car must stay centred to pass pillars on either side).
 #
-# Pixels of corridor-centre offset to add toward the inner wall. 0 disables
-# the bias entirely. Retune on the mat with LANE_DEFAULT_HALF_WIDTH_PX.
-INNER_WALL_BIAS_PX = 45
+# Millimetres to shift the target lateral position toward the inner wall (in
+# planning/wall_centering.py's BOTH-walls mode). 0 disables the bias entirely.
+# Retune on the mat. Applied with +sign toward the RIGHT wall, matching
+# CenteringObservation.offset_mm's convention.
+INNER_WALL_BIAS_MM = 120.0
 
 # ------------------------------------------------------------- start delay
 # Seconds to stay stopped in FOLLOW_TRACK after START_BUTTON_PRESSED before

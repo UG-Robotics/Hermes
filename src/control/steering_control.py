@@ -81,7 +81,7 @@ class SteeringController:
         is for a one-shot manoeuvre (a fresh pillar detection) where
         resetting the PID's integral/derivative history is exactly right.
         Calling turn_by() every tick instead (e.g. from
-        planning/lane_centering.py, which computes a new nudge every frame)
+        planning/wall_centering.py, which computes a new nudge every tick)
         would reset that history every tick and turn the heading-hold loop
         jittery. nudge_target() just drags the aim point a little and lets
         the PID's existing state keep smoothing the servo toward it.

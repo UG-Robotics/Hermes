@@ -4,8 +4,8 @@ Trajectory helpers (shared planning geometry).
 Hermes generates its motion targets close to the point of use rather than as
 one monolithic path:
 
-    * FOLLOW_TRACK corridor centering -> planning/lane_centering.py turns a
-      camera LaneObservation into a small per-tick heading nudge,
+    * FOLLOW_TRACK corridor centering -> planning/wall_centering.py turns the
+      two side ToF distances into a small per-tick heading nudge,
     * AVOID_OBSTACLE pillar passing  -> planning/obstacle_planner.py caps the
       pillar-avoidance angle against the side ToF walls,
     * PARK parallel parking          -> planning/parking_planner.py runs a

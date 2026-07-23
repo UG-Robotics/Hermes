@@ -1,13 +1,12 @@
 """
 Region-of-Interest (ROI) helpers.
 
-Each perception module currently crops its own ROI inline where it needs one
-(perception/track_detection.py takes a horizontal band of the frame via
-LANE_ROI_TOP_FRAC/BOTTOM_FRAC; the pillar/corner/parking detectors search the
-whole frame). These helpers are the shared, reusable version of that fraction
--> pixel-slice crop, so a module that wants to restrict detection to a band of
-the frame doesn't re-derive the arithmetic. Pure indexing over a native RGB
-numpy array -- no OpenCV dependency.
+The pillar/corner/parking detectors currently search the whole frame rather
+than a cropped ROI. These helpers are the shared, reusable version of a
+fraction -> pixel-slice crop, so a module that later wants to restrict
+detection to a band of the frame (e.g. only look for corner markers in the
+lower half where the floor is) doesn't re-derive the arithmetic. Pure indexing
+over a native RGB numpy array -- no OpenCV dependency.
 """
 
 from __future__ import annotations

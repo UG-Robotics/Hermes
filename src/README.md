@@ -162,7 +162,6 @@ perception/
 ├── camera.py            # real (Picamera2/OpenCV) + synthetic frame source
 ├── preprocessing.py     # thin compatibility wrapper over pillar detection
 ├── roi.py               # region-of-interest crop helpers
-├── track_detection.py   # wall/corridor detection (lane centering)
 ├── pillar_detection.py  # red/green traffic-sign pillars + pass-side
 ├── corner_detection.py  # orange/blue corner markers → lap + direction
 └── finish_detection.py  # magenta parking-zone marker
@@ -338,7 +337,7 @@ This layer transforms behavioural goals into motion targets.
 
 ## Responsibilities
 
-* lane centering
+* corridor centering (ToF + IMU)
 * obstacle-side planning
 * steering target generation
 * parking trajectory generation
@@ -348,7 +347,7 @@ This layer transforms behavioural goals into motion targets.
 
 ```text
 planning/
-├── lane_centering.py
+├── wall_centering.py    # ToF-based corridor centering (replaces camera lane centering)
 ├── obstacle_planner.py
 ├── trajectory.py
 └── parking_planner.py
