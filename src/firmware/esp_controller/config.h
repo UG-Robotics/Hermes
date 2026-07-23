@@ -37,7 +37,7 @@ const int TOF_TIMING_BUDGET_MS = 20;
 
 // Motor pins
 const int PIN_MOTOR_IN1 = 18;
-const int PIN_MOTOR_IN2 = 19;
+const int PIN_MOTOR_IN2 = 25;
 const int PIN_MOTOR_PWM = 23;  // ena
 
 const int MOTOR_PWM_CHANNEL = 0; // unused in 3.0, apparently ledcAttach() uses the pin number directly now
@@ -53,11 +53,19 @@ const int SERVO_RIGHT = 120;
 // Start button
 const int PIN_START_BUTTON = 2;
 
-// LED (status indicator)
-const int PIN_LED = 25;
+// LED (status indicator). MOVED off GPIO25 -- that pin is now PIN_MOTOR_IN2
+// (see above). GPIO26 is free. (The LED isn't driven anywhere in the firmware
+// yet, so this is just avoiding a duplicate-pin footgun for when it is.)
+const int PIN_LED = 26;
 
 // serial
 const int long BAUD_RATE = 115200;
+// Debug: echo each ACCEPTED CMD back over serial so you can confirm on the
+// monitor that the ESP is actually receiving valid commands. A valid CMD is
+// otherwise silent (see handleCmd in serial_protocol.cpp), which is why a good
+// packet looks like "nothing happened". Set to 0 before racing: at the Pi's
+// streaming rate this floods the serial TX and competes with the TEL line.
+#define DEBUG_ECHO_CMD 1
 
     // Debug: echo each ACCEPTED CMD back over serial so you can confirm on the
     // monitor that the ESP is actually receiving valid commands. A valid CMD is
