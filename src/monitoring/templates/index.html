@@ -204,11 +204,11 @@
         <button class="wide" id="manual-btn" onclick="toggleManual()">Take Manual Control</button>
       </div>
       <div class="dpad">
-        <span class="sp"></span><button onmousedown="drive('FORWARD',0)" onmouseup="release()">▲</button><span class="sp"></span>
-        <button onmousedown="drive('FORWARD',-90)" onmouseup="release()">◀</button>
-        <button onmousedown="drive('STOP',0)" onmouseup="release()">■</button>
-        <button onmousedown="drive('FORWARD',90)" onmouseup="release()">▶</button>
-        <span class="sp"></span><button onmousedown="drive('BACKWARD',0)" onmouseup="release()">▼</button><span class="sp"></span>
+        <span class="sp"></span><button onmousedown="pressKey('w')" onmouseup="releaseKey('w')" onmouseleave="releaseKey('w')" ontouchstart="pressKey('w');event.preventDefault()" ontouchend="releaseKey('w')">▲</button><span class="sp"></span>
+        <button onmousedown="pressKey('a')" onmouseup="releaseKey('a')" onmouseleave="releaseKey('a')" ontouchstart="pressKey('a');event.preventDefault()" ontouchend="releaseKey('a')">◀</button>
+        <button onmousedown="stopAll()" ontouchstart="stopAll();event.preventDefault()">■</button>
+        <button onmousedown="pressKey('d')" onmouseup="releaseKey('d')" onmouseleave="releaseKey('d')" ontouchstart="pressKey('d');event.preventDefault()" ontouchend="releaseKey('d')">▶</button>
+        <span class="sp"></span><button onmousedown="pressKey('s')" onmouseup="releaseKey('s')" onmouseleave="releaseKey('s')" ontouchstart="pressKey('s');event.preventDefault()" ontouchend="releaseKey('s')">▼</button><span class="sp"></span>
       </div>
       <div class="hint">Hold the pad, or focus this page and use
         <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <kbd>space</kbd>.
@@ -453,10 +453,29 @@ let manualOn=false, held=false;
 function ev(n){ post('/api/event',{event:n}); }
 function toggleManual(){ manualOn=!manualOn; post('/api/manual',{active:manualOn});
   const b=$('manual-btn'); b.textContent=manualOn?'Release to Autonomous':'Take Manual Control'; b.classList.toggle('on',manualOn); }
-function drive(action,steer){ held=true; if(!manualOn){manualOn=true;$('manual-btn').textContent='Release to Autonomous';$('manual-btn').classList.add('on');}
-  const speed=action==='STOP'?0:255;  // full throttle -- motor is underpowered; 150/100 was too weak to move
-  post('/api/manual',{active:true,target:{speed,steer,action}}); }
-function release(){ held=false; post('/api/manual',{active:true,target:{speed:0,steer:0,action:'STOP'}}); }
+// Manual driving is NON-BLOCKING: drive (w/s) and steer (a/d) are INDEPENDENT
+// held-key state, mirroring the Pi keyboard listener (hardware/buttons.py
+// get_manual_target). Every press/release recomputes the merged target from
+// whatever is still held -- so releasing a steer key keeps the forward/reverse
+// you're still holding instead of cancelling it to a stop.
+const DRIVE_KEYS = new Set(['w','s','a','d']);
+const heldKeys = new Set();
+
+function sendManual(){
+  if(!manualOn){ manualOn=true; $('manual-btn').textContent='Release to Autonomous'; $('manual-btn').classList.add('on'); }
+  const w=heldKeys.has('w'), s=heldKeys.has('s'), a=heldKeys.has('a'), d=heldKeys.has('d');
+  // steer ±90 = full lock (STEER_MANUAL_DEGREE); opposing keys cancel to centre.
+  const steer = (a&&!d) ? -90 : (d&&!a) ? 90 : 0;
+  let action='STOP', speed=0;
+  if(w&&!s){ action='FORWARD'; speed=255; }       // full throttle (weak motor)
+  else if(s&&!w){ action='BACKWARD'; speed=255; }
+  // w+s or no drive key -> STOP, but keep steer so the wheels can pre-aim.
+  held = speed>0;
+  post('/api/manual',{active:true,target:{speed,steer,action}});
+}
+function pressKey(k){ if(!heldKeys.has(k)){ heldKeys.add(k); sendManual(); } }
+function releaseKey(k){ if(heldKeys.delete(k)){ sendManual(); } }
+function stopAll(){ heldKeys.clear(); held=false; post('/api/manual',{active:true,target:{speed:0,steer:0,action:'STOP'}}); }
 function post(url,body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
 
 let scns=[];
@@ -466,16 +485,14 @@ function descScn(){ const s=scns.find(x=>x.file===$('scn').value); $('scn-desc')
 function runScn(){ post('/api/scenarios',{action:'run',scenario:$('scn').value}); }
 function cancelScn(){ post('/api/scenarios',{action:'cancel'}); }
 
-// browser keyboard driving
-// steer ±90 = full lock, matching STEER_MANUAL_DEGREE / STEER_COMMAND_MAX on
-// the Pi (the ESP maps ±90 onto the full SERVO_LEFT..SERVO_RIGHT travel). Do
-// NOT use ±45 here -- that's the autonomous PID's correction-authority clamp,
-// and sending it from manual control only reaches ~half the servo's travel.
-const KEYMAP={w:['FORWARD',0],s:['BACKWARD',0],a:['FORWARD',-90],d:['FORWARD',90]};
+// browser keyboard driving -- same non-blocking held-key model as the d-pad:
+// w/s drive, a/d steer, held independently. Releasing a steer key recomputes
+// from what's still held (see sendManual) instead of stopping the drive.
 addEventListener('keydown',e=>{ if(e.repeat)return; const k=e.key.toLowerCase();
-  if(KEYMAP[k]){ e.preventDefault(); drive(KEYMAP[k][0],KEYMAP[k][1]); }
-  else if(e.key===' '){ e.preventDefault(); drive('STOP',0); } });
-addEventListener('keyup',e=>{ if('wsad '.includes(e.key.toLowerCase())){ e.preventDefault(); release(); } });
+  if(DRIVE_KEYS.has(k)){ e.preventDefault(); pressKey(k); }
+  else if(e.key===' '){ e.preventDefault(); stopAll(); } });
+addEventListener('keyup',e=>{ const k=e.key.toLowerCase();
+  if(DRIVE_KEYS.has(k)){ e.preventDefault(); releaseKey(k); } });
 
 buildFSM(); buildMeters(); loadScn(); connect(); requestAnimationFrame(drawHUD);
 </script>
